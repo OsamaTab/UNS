@@ -15,7 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # This defines exactly what arguments to pass for each OS
+        # It completely bypasses Bash script errors
+        include:
+          - os: macos-latest
+            args: --mac --arm64 --x64
+          - os: windows-latest
+            args: --win nsis --x64
+          - os: ubuntu-latest
+            args: --linux AppImage --x64
 
     steps:
       - name: Checkout Code
@@ -53,25 +61,11 @@ jobs:
           cd ..
 
       - name: Build Electron App
-        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            # We add --arm64 specifically for your M4, but universal works too
-            # Adding the x64ArchFiles rule fix for the binary conflict
-            npx electron-builder build --publish always --mac --universal
-          elif [ "$RUNNER_OS" == "Windows" ]; then
-            npx electron-builder build --publish always --win nsis --x64
-          else
-            npx electron-builder build --publish always --linux AppImage --x64
-          fi
-          # Execute electron-builder with the publish flag
-          npx electron-builder build --publish always $TARGETS
-            ${{ matrix.os == 'macos-latest' && '--mac --universal' || '' }} \
-            ${{ matrix.os == 'windows-latest' && '--win --x64' || '' }} \
-            ${{ matrix.os == 'ubuntu-latest' && '--linux --AppImage' || '' }}
-
+        # This single line replaces all the confusing if/else logic
+        run: npx electron-builder build --publish always ${{ matrix.args }}
+        
       - name: Create Release Notes
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest'
@@ -93,8 +87,6 @@ jobs:
             4. Scroll down to the **Security** section. You will see a message: *"UNS was blocked from use because it is not from an identified developer."*
             5. Click **Open Anyway**.
             6. Enter your Mac password and click **Open** one last time.
-            
-            > **Pro Tip:** You can also Right-Click the app in your Applications folder and select **Open** to bypass the block faster.
 
             #### 🪟 Windows
             1. Download the `.exe` installer.
