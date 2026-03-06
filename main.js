@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const axios = require('axios');
@@ -9,6 +9,10 @@ let scraperWindow = null;
 let pythonProcess = null;
 let isScraping = false;
 let scrapeCancelled = false; // The Master Switch
+
+let enableCloudflareBypass = false;
+let currentJobId = null;
+let waitingForHuman = false;
 
 // ============ PATHS ============
 const userDataPath = app.getPath('userData');
@@ -52,7 +56,7 @@ function startPythonBackend() {
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
-        height: 800,
+        height: 1000,
         title: "Universal Novel Scraper",
         icon: path.join(__dirname, 'assets/icon.png'),
         webPreferences: {
@@ -88,6 +92,9 @@ function createScraperWindow() {
         }
     });
 
+    // 🔥 FIX: Spoof a real Chrome User-Agent so Cloudflare actually renders the challenge
+    scraperWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
     scraperWindow.on('close', (e) => {
         if (!app.isQuitting) {
             e.preventDefault();
@@ -102,26 +109,17 @@ function createScraperWindow() {
 async function detectCloudflare(window) {
     const title = await window.webContents.getTitle();
     const url = window.webContents.getURL();
-    const html = await window.webContents.executeJavaScript('document.documentElement.innerHTML');
 
-    const cloudflareIndicators = [
-        'just a moment',
-        'cloudflare',
-        'security check',
-        'checking your browser',
-        'ddos protection',
-        'verify you are human',
-        'click to verify',
-        'challenge'
-    ];
+    // 1. Only check the page TITLE for generic terms (prevents false positives from novel text)
+    const titleIndicators = ['just a moment', 'cloudflare', 'attention required', 'verify you are human'];
+    const hasTitleIndicator = titleIndicators.some(i => title.toLowerCase().includes(i));
 
-    const isCloudflare = cloudflareIndicators.some(indicator =>
-        title.toLowerCase().includes(indicator) ||
-        url.toLowerCase().includes('cloudflare') ||
-        html.toLowerCase().includes(indicator)
-    );
+    // 2. Look for actual Cloudflare challenge HTML elements in the DOM
+    const hasCFElements = await window.webContents.executeJavaScript(`
+        !!document.querySelector('#cf-challenge-running, #cf-please-wait, #turnstile-wrapper, .cf-turnstile')
+    `);
 
-    return isCloudflare;
+    return hasTitleIndicator || hasCFElements || url.toLowerCase().includes('cloudflare');
 }
 
 // ============ WAIT FOR CLOUDFLARE SOLVE ============
@@ -266,6 +264,8 @@ async function scrapeChapter(event, jobData, url, chapterNum) {
             job_id: jobData.job_id,
             novel_name: jobData.novel_name,
             chapter_title: pageData.title,
+            author: jobData.author,   
+            cover_data: jobData.cover_data,
             content: pageData.paragraphs,
             start_url: url,
             next_url: pageData.nextUrl
@@ -344,6 +344,35 @@ async function waitForEngine(mainWindow, attempts = 10) {
     }
     console.error("❌ Engine timed out.");
 }
+
+ipcMain.handle('add-epub-to-library', async (event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Add EPUB to Library',
+        buttonLabel: 'Add to Library',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'EPUB Books', extensions: ['epub'] }]
+    });
+
+    if (result.canceled) return false;
+
+    let added = false;
+    for (const filePath of result.filePaths) {
+        const fileName = path.basename(filePath);
+        const destPath = path.join(outputDir, 'epubs', fileName);
+        
+        // Only copy if it doesn't already exist
+        if (!fs.existsSync(destPath)) {
+            fs.copyFileSync(filePath, destPath);
+            added = true;
+        }
+    }
+    return added;
+});
+
+ipcMain.on('open-epub', (event, filename) => {
+    const filePath = path.join(outputDir, 'epubs', filename);
+    shell.openPath(filePath); // Opens in Apple Books, Calibre, Sumatra, etc.
+});
 
 // ============ TRACK BROWSER VIEW STATE ============
 let showBrowserWindow = false;
@@ -461,15 +490,15 @@ ipcMain.on('resume-scrape', async (event, jobData) => {
         const statusData = response.data;
 
         // 2. Determine where to actually start
-        // If we have a 'start_url' saved in the job history, use that
         const actualStartUrl = jobData.start_url;
-
         console.log(`▶️ Resuming ${jobData.novel_name} from ${actualStartUrl}`);
 
         // 3. Trigger the standard scraping logic
-        // Reset cancellation flags
+        // 👇 ADD/UPDATE THESE LINES TO RESET STATE
         scrapeCancelled = false;
         isScraping = true;
+        currentJobId = jobData.job_id;
+        enableCloudflareBypass = jobData.enable_cloudflare_bypass || false;
 
         // Pass the jobData to the existing scrape function
         await scrapeChapter(event, jobData, actualStartUrl, statusData.chapters_count + 1);

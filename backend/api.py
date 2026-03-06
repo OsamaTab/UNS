@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,9 +7,11 @@ import json
 import re
 import base64
 import sys
+import ebooklib
 from ebooklib import epub
 from contextlib import asynccontextmanager
 from typing import Optional
+import urllib.parse
 
 # ============ PATH SETUP ============
 # Electron will pass the 'userData' path as the first argument
@@ -139,32 +141,31 @@ def save_chapter(data: dict):
     content = data.get("content", [])
     chapter_info = [chapter_title, content]
     
-    # 2. Append to progress file (.jsonl)
-    # Using 'a' (append) so we don't overwrite previous chapters
+   # 2. Append to progress file (.jsonl)
     with open(progress_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(chapter_info, ensure_ascii=False) + "\n")
+        
+    # 👇 NEW: Count the total lines we currently have
+    with open(progress_file, "r", encoding="utf-8") as f:
+        current_count = sum(1 for _ in f)
     
     # 3. Update the Bookmark in memory (jobs dictionary)
-    # We want to save the 'next_url' as the 'start_url' for the next session
     next_chapter_url = data.get("next_url") or data.get("start_url")
 
     if job_id not in jobs:
-        # Initial creation if not in history
         jobs[job_id] = {
             "novel_name": data.get("novel_name", "Unknown Novel"),
             "status": "processing",
             "author": data.get("author", "Unknown"),
             "cover_data": data.get("cover_data", ""),
             "start_url": next_chapter_url,
+            "chapters_count": current_count, # 👇 NEW: Save the count
             "last_updated": str(os.path.getmtime(progress_file)) if os.path.exists(progress_file) else ""
         }
     else:
-        # Update existing job
         jobs[job_id]["status"] = "processing"
+        jobs[job_id]["chapters_count"] = current_count # 👇 NEW: Update the count
         
-        # 🔥 THE CRITICAL "RESUME" FIX:
-        # If the scraper found a 'Next' button, we save that URL.
-        # This way, when you click 'Resume', the scraper starts at the NEW URL.
         if next_chapter_url:
             jobs[job_id]["start_url"] = next_chapter_url
             
@@ -178,6 +179,41 @@ def save_chapter(data: dict):
         "job_id": job_id, 
         "bookmark_saved": next_chapter_url
     }
+
+@app.post("/api/early-finalize")
+def early_finalize(data: FinalizeData):
+    job_id = data.job_id
+    progress_file = get_progress_file(job_id)
+    epub_file = get_epub_file(job_id)
+    
+    if not os.path.exists(progress_file):
+        raise HTTPException(status_code=404, detail="No chapters found to create EPUB.")
+    
+    chapters = []
+    with open(progress_file, "r", encoding="utf-8") as f:
+        for line in f:
+            chapters.append(json.loads(line))
+    
+    create_epub(
+        novel_title=data.novel_name,
+        author=data.author,
+        chapters=chapters,
+        output_filename=epub_file,
+        cover_data=data.cover_data
+    )
+    
+    # Remove from history instead of marking as completed
+    if job_id in jobs: del jobs[job_id]
+    if job_id in active_scrapes: del active_scrapes[job_id]
+    
+    save_history(jobs)
+    save_active_scrapes(active_scrapes)
+    
+    # Clean up the progress file
+    if os.path.exists(progress_file):
+        os.remove(progress_file)
+    
+    return {"status": "completed", "epub_path": epub_file}
 
 @app.post("/api/finalize-epub")
 def finalize_epub(data: FinalizeData):
@@ -202,6 +238,7 @@ def finalize_epub(data: FinalizeData):
     )
     
     jobs[job_id]["status"] = "completed"
+    jobs[job_id]["chapters_count"] = len(chapters)
     if job_id in active_scrapes:
         del active_scrapes[job_id]
         save_active_scrapes(active_scrapes)
@@ -211,6 +248,94 @@ def finalize_epub(data: FinalizeData):
         os.remove(progress_file)
     
     return {"status": "completed", "epub_path": epub_file}
+
+
+@app.get("/api/library")
+def get_library():
+    epubs = []
+    if os.path.exists(EPUB_DIR):
+        for file in os.listdir(EPUB_DIR):
+            if file.endswith(".epub"):
+                filepath = os.path.join(EPUB_DIR, file)
+                
+                # Default fallback names
+                title = file.replace(".epub", "").replace("_", " ")
+                author = "Unknown Author"
+                
+                # Extract the real Title and Author from the EPUB metadata
+                try:
+                    book = epub.read_epub(filepath)
+                    title_meta = book.get_metadata('DC', 'title')
+                    if title_meta: title = title_meta[0][0]
+                    
+                    author_meta = book.get_metadata('DC', 'creator')
+                    if author_meta: author = author_meta[0][0]
+                except Exception as e:
+                    pass # If reading metadata fails, just use the fallback
+                    
+                epubs.append({
+                    "filename": file, 
+                    "title": title,
+                    "author": author
+                })
+    return epubs
+
+# 👇 NEW: Delete from Library Endpoint
+@app.delete("/api/library/{filename}")
+def delete_from_library(filename: str):
+    clean_filename = urllib.parse.unquote(filename)
+    file_path = os.path.join(EPUB_DIR, clean_filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return {"status": "deleted"}
+    raise HTTPException(status_code=404, detail="File not found")
+
+# 👇 NEW: Export/Download Endpoint (renames it from job_id back to Novel Title)
+@app.get("/api/library/download/{filename}")
+def download_from_library(filename: str):
+    clean_filename = urllib.parse.unquote(filename)
+    file_path = os.path.join(EPUB_DIR, clean_filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    download_name = clean_filename
+    try:
+        book = epub.read_epub(file_path)
+        title_meta = book.get_metadata('DC', 'title')
+        if title_meta:
+            raw_name = title_meta[0][0]
+            # Strip invalid filename characters
+            safe_name = re.sub(r'[\\/*?:"<>|]', "", raw_name).replace(" ", "_")
+            download_name = f"{safe_name}.epub"
+    except:
+        pass
+        
+    return FileResponse(file_path, media_type='application/epub+zip', filename=download_name)
+
+@app.get("/api/cover/{filename}")
+def get_cover(filename: str):
+    # 1. Ensure the filename is perfectly URL-decoded (fixes the %2C comma issue)
+    clean_filename = urllib.parse.unquote(filename)
+    epub_path = os.path.join(EPUB_DIR, clean_filename)
+    
+    if not os.path.exists(epub_path):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    try:
+        book = epub.read_epub(epub_path)
+        
+        # 2. Foolproof extraction: Find ANY image inside the EPUB
+        # Since our scraper only adds the cover image, this works perfectly!
+        for item in book.get_items():
+            if item.media_type and item.media_type.startswith('image/'):
+                return Response(content=item.get_content(), media_type=item.media_type)
+                
+    except Exception as e:
+        print(f"Error reading cover for {clean_filename}: {e}")
+        
+    # Return a 404 if the EPUB literally has no images inside it
+    raise HTTPException(status_code=404, detail="No cover found")
 
 @app.get("/api/download/{job_id}")
 def download_epub(job_id: str):
@@ -227,8 +352,10 @@ def download_epub(job_id: str):
 @app.post("/api/stop-scrape")
 def stop_scrape(data: StopScrapeData):
     job_id = data.job_id
+    
+    # 🔥 FIX: If the user stops before the first chapter saves, just acknowledge it.
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        return {"status": "paused", "job_id": job_id, "note": "Stopped before first save"}
     
     jobs[job_id]["status"] = "paused"
     save_history(jobs)

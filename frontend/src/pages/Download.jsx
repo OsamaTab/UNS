@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Shield, ExternalLink, Terminal, Loader2, BookOpen } from 'lucide-react';
+import { Play, Square, Shield, ExternalLink, Terminal, Loader2, BookOpen, Image as ImageIcon } from 'lucide-react';
 
-export default function Download({ 
-  isScraping, setIsScraping, status, setStatus, 
-  progress, setProgress, currentJobId, setCurrentJobId 
+export default function Download({
+  isScraping, setIsScraping, status, setStatus,
+  currentJobId, setCurrentJobId
 }) {
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [author, setAuthor] = useState('');
+  const [coverData, setCoverData] = useState('');
+  const [coverFileName, setCoverFileName] = useState('');
   const [enableCloudflareBypass, setEnableCloudflareBypass] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
   const [logs, setLogs] = useState([]);
-  const [chaptersFound, setChaptersFound] = useState(0);
   const [chaptersScraped, setChaptersScraped] = useState(0);
   const logEndRef = useRef(null);
 
@@ -21,75 +22,68 @@ export default function Download({
 
   useEffect(() => {
     const handleLog = (data) => {
-      const timestamp = new Date().toLocaleTimeString([], { 
-        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' 
+      const timestamp = new Date().toLocaleTimeString([], {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
       setLogs(prev => [...prev, { time: timestamp, msg: data.message || data.status || "Update received" }]);
-      
+
       // Update status
       if (data.status) setStatus(data.status);
-      
-      // Update chapter counts from log messages
+
+      // Extract exact chapter count from the "Saved Chapter X:" log message
       if (data.message) {
-        // Check for chapter found messages
-        const foundMatch = data.message.match(/Found chapter:? (\d+)/i) || 
-                          data.message.match(/Chapter (\d+) found/i) ||
-                          data.message.match(/Found (\d+) chapters?/i);
-        if (foundMatch) {
-          const count = parseInt(foundMatch[1]);
+        const savedMatch = data.message.match(/Saved Chapter (\d+)/i);
+        if (savedMatch) {
+          const count = parseInt(savedMatch[1]);
           if (!isNaN(count)) {
-            if (data.message.toLowerCase().includes('found') && !data.message.toLowerCase().includes('scraped')) {
-              setChaptersFound(prev => Math.max(prev, count));
-            }
-          }
-        }
-        
-        // Check for chapter scraped messages
-        const scrapedMatch = data.message.match(/Scraped chapter:? (\d+)/i) ||
-                            data.message.match(/Chapter (\d+) scraped/i) ||
-                            data.message.match(/Scraped (\d+) chapters?/i);
-        if (scrapedMatch) {
-          const count = parseInt(scrapedMatch[1]);
-          if (!isNaN(count)) {
-            setChaptersScraped(prev => Math.max(prev, count));
+            setChaptersScraped(count);
           }
         }
       }
     };
-    
+
     window.electronAPI?.onScrapeStatus(handleLog);
     return () => window.electronAPI?.removeStatusListener();
   }, [setStatus]);
 
+  const handleCoverChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setCoverFileName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCoverData(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleStart = () => {
     if (!url || !name) return;
-    
-    // Reset counters
-    setChaptersFound(0);
+
+    // Reset counters and logs
     setChaptersScraped(0);
     setLogs([{ time: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }), msg: 'Initializing engine...' }]);
-    
+
     const jobId = crypto.randomUUID();
     setCurrentJobId(jobId);
     setIsScraping(true);
-    window.electronAPI?.startScrape({ 
-      job_id: jobId, 
-      start_url: url, 
-      novel_name: name, 
-      author, 
-      enable_cloudflare_bypass: enableCloudflareBypass 
+
+    // Pass everything to the electron backend
+    window.electronAPI?.startScrape({
+      job_id: jobId,
+      start_url: url,
+      novel_name: name,
+      author: author,
+      cover_data: coverData,
+      enable_cloudflare_bypass: enableCloudflareBypass
     });
   };
 
   const handleStop = () => {
     setIsScraping(false);
-    window.electronAPI?.stopScrape();
+    window.electronAPI?.stopScrape({ job_id: currentJobId });
   };
-
-  // Calculate progress percentage based on chapters
-  const progressPercentage = chaptersFound > 0 
-    ? Math.round((chaptersScraped / chaptersFound) * 100) 
-    : progress || 0;
 
   return (
     <div className="max-w-6xl mx-auto px-6">
@@ -99,7 +93,7 @@ export default function Download({
           <h1 className="text-2xl font-semibold text-white">Download Manager</h1>
           <p className="text-sm text-zinc-500">Terminal interface v2.0</p>
         </div>
-        
+
         {isScraping && (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-full">
             <Loader2 size={14} className="text-blue-400 animate-spin" />
@@ -113,13 +107,14 @@ export default function Download({
         <div className="col-span-2 space-y-6">
           <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-6">
             <div className="space-y-5">
+
               {/* URL Field */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                  Source URL
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                  First Chapter Source URL <span className="text-red-500 text-sm">*</span>
                 </label>
-                <input 
-                  value={url} 
+                <input
+                  value={url}
                   onChange={e => setUrl(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
                   placeholder="https://..."
@@ -127,31 +122,59 @@ export default function Download({
                 />
               </div>
 
-              {/* Title & Author Grid */}
+              {/* Title Field */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                  Novel Title <span className="text-red-500 text-sm">*</span>
+                </label>
+                <input
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                  placeholder="The Greatest Estate Developer"
+                  disabled={isScraping}
+                />
+              </div>
+
+              {/* Author & Cover Grid */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                    Novel Title
+                    Author <span className="text-zinc-600 normal-case tracking-normal ml-1">(Optional)</span>
                   </label>
-                  <input 
-                    value={name} 
-                    onChange={e => setName(e.target.value)}
+                  <input
+                    value={author}
+                    onChange={e => setAuthor(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
-                    placeholder="Title"
+                    placeholder="Author Name"
                     disabled={isScraping}
                   />
                 </div>
+
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                    Author
+                    Cover Image <span className="text-zinc-600 normal-case tracking-normal ml-1">(Optional)</span>
                   </label>
-                  <input 
-                    value={author} 
-                    onChange={e => setAuthor(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
-                    placeholder="Author"
-                    disabled={isScraping}
-                  />
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCoverChange}
+                      className="hidden"
+                      id="cover-upload"
+                      disabled={isScraping}
+                    />
+                    <label
+                      htmlFor="cover-upload"
+                      className={`flex items-center justify-center w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm transition ${isScraping
+                          ? 'opacity-50 cursor-not-allowed text-zinc-600'
+                          : 'text-zinc-400 hover:text-white hover:border-zinc-700 cursor-pointer'
+                        }`}
+                    >
+                      <ImageIcon size={16} className="mr-2 shrink-0" />
+                      <span className="truncate">{coverFileName || "Choose Image..."}</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -159,35 +182,31 @@ export default function Download({
               <div className="pt-2">
                 <button
                   onClick={() => !isScraping && setEnableCloudflareBypass(!enableCloudflareBypass)}
-                  className={`flex items-center justify-between w-full p-4 rounded-lg border transition ${
-                    enableCloudflareBypass 
-                      ? 'bg-blue-500/10 border-blue-500/30' 
+                  className={`flex items-center justify-between w-full p-4 rounded-lg border transition ${enableCloudflareBypass
+                      ? 'bg-blue-500/10 border-blue-500/30'
                       : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-900'
-                  }`}
+                    }`}
                   disabled={isScraping}
                 >
                   <div className="flex items-center gap-3">
                     <Shield size={18} className={enableCloudflareBypass ? 'text-blue-400' : 'text-zinc-500'} />
                     <div className="text-left">
                       <p className="text-sm font-medium text-white">Cloudflare Bypass</p>
-                      <p className="text-xs text-zinc-500">Enable anti-bot protection</p>
+                      <p className="text-xs text-zinc-500">Enable anti-bot protection manually</p>
                     </div>
                   </div>
-                  <div className={`w-2 h-2 rounded-full ${
-                    enableCloudflareBypass ? 'bg-blue-500' : 'bg-zinc-700'
-                  }`} />
+                  <div className={`w-2 h-2 rounded-full ${enableCloudflareBypass ? 'bg-blue-500' : 'bg-zinc-700'
+                    }`} />
                 </button>
               </div>
 
-              {/* Action Button */}
-              <button 
+              <button
                 onClick={isScraping ? handleStop : handleStart}
-                className={`w-full py-3 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
-                  isScraping 
-                    ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20' 
+                className={`w-full py-3 rounded-lg font-medium transition flex items-center justify-center gap-2 ${isScraping
+                    ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20'
                     : 'bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed'
-                }`}
-                disabled={!url || !name}
+                  }`}
+                disabled={(!url || !name) && !isScraping} // 👈 FIX: Only disable if we are NOT currently scraping
               >
                 {isScraping ? (
                   <>
@@ -215,7 +234,7 @@ export default function Download({
 
         {/* Monitor Panel */}
         <div className="space-y-6">
-          <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 h-125 flex flex-col">
+          <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 h-137 flex flex-col">
             {/* Monitor Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
@@ -224,9 +243,10 @@ export default function Download({
                   Console Output
                 </span>
               </div>
-              <button 
+              <button
                 onClick={() => { setShowBrowser(!showBrowser); window.electronAPI?.toggleScraper(!showBrowser); }}
                 className="p-1.5 rounded hover:bg-zinc-800 text-zinc-500 hover:text-white transition"
+                title="Toggle Live Scraper Window"
               >
                 <ExternalLink size={14} />
               </button>
@@ -239,34 +259,33 @@ export default function Download({
                   <p className="text-xs text-zinc-500 mb-1">Status</p>
                   <p className="text-sm font-medium text-white">{status || 'Ready'}</p>
                 </div>
-                
+
                 {/* Chapter Counter */}
                 {isScraping && (
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="text-xs text-zinc-500 mb-1">Chapters</p>
+                      <p className="text-xs text-zinc-500 mb-1">Downloaded</p>
                       <div className="flex items-center gap-2">
                         <BookOpen size={14} className="text-blue-400" />
                         <span className="text-sm font-medium text-white">
-                          {chaptersScraped} / {chaptersFound || '?'}
+                          {chaptersScraped} Chapters
                         </span>
                       </div>
                     </div>
                   </div>
                 )}
               </div>
-              
-              {/* Progress Bar */}
+
+              {/* Activity Indicator */}
               {isScraping && (
                 <div className="space-y-2">
-                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 transition-all duration-300"
-                      style={{ width: `${progressPercentage}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-end">
-                    <span className="text-xs text-zinc-500">{progressPercentage}%</span>
+                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden relative">
+                    <div className="absolute top-0 bottom-0 left-0 w-1/3 bg-blue-500 rounded-full animate-pulse blur-[2px]" />
+                    <div className="h-full bg-blue-500 w-full animate-[progress_2s_ease-in-out_infinite]" style={{
+                      backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.5s infinite linear'
+                    }} />
                   </div>
                 </div>
               )}
@@ -291,6 +310,14 @@ export default function Download({
           </div>
         </div>
       </div>
+
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+      `}} />
     </div>
   );
 }

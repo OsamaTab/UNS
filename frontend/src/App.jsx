@@ -54,7 +54,7 @@ export default function App() {
         <Navigation isScraping={isScraping} />
         <main className="max-w-6xl mx-auto px-6 py-8">
           <Routes>
-            <Route path="/" element={<Navigate to="/download" />} />
+            <Route path="/" element={<Navigate to="/library" />} />
             <Route path="/download" element={
               <Download
                 isScraping={isScraping} setIsScraping={setIsScraping}
@@ -65,7 +65,14 @@ export default function App() {
             } />
             <Route path="/library" element={<Library />} />
             <Route path="/search" element={<Search />} />
-            <Route path="/history" element={<History library={library} fetchLibrary={fetchLibrary} />} />
+            <Route path="/history" element={
+              <History
+                library={library}
+                fetchLibrary={fetchLibrary}
+                setCurrentJobId={setCurrentJobId}
+                setIsScraping={setIsScraping}
+              />
+            } />
           </Routes>
         </main>
       </div>

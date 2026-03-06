@@ -4,8 +4,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Scraper control
     startScrape: (jobData) => ipcRenderer.send('start-browser-scrape', jobData),
     stopScrape: (jobData) => ipcRenderer.send('stop-scrape', jobData),
+    resumeScrape: (jobData) => ipcRenderer.send('resume-scrape', jobData),
     toggleScraper: (show) => ipcRenderer.send('toggle-scraper-view', show),
     onEngineReady: (callback) => ipcRenderer.on('engine-ready', callback),
+    addEpubToLibrary: () => ipcRenderer.invoke('add-epub-to-library'),
+    openEpub: (filename) => ipcRenderer.send('open-epub', filename),
     
     // Progress listeners
     onScrapeStatus: (callback) => {
