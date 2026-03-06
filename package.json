@@ -33,7 +33,8 @@
         "from": "backend/dist",
         "to": "bin",
         "filter": [
-          "engine*"
+          "engine",
+          "engine.exe"
         ]
       }
     ],

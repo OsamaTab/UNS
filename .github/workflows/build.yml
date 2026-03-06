@@ -57,9 +57,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # We run electron-builder directly to avoid input errors
-          # --publish always tells it to upload to your GitHub Releases
-          npx electron-builder --publish always \
+          # Define targets based on OS
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            TARGETS="--mac --universal"
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            TARGETS="--win nsis --x64"
+          else
+            # For Linux, AppImage is a target value, not a flag
+            TARGETS="--linux AppImage --x64"
+          fi
+          # Execute electron-builder with the publish flag
+          npx electron-builder build --publish always $TARGETS
             ${{ matrix.os == 'macos-latest' && '--mac --universal' || '' }} \
             ${{ matrix.os == 'windows-latest' && '--win --x64' || '' }} \
             ${{ matrix.os == 'ubuntu-latest' && '--linux --AppImage' || '' }}
