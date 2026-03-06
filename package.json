@@ -11,7 +11,9 @@
     "dev": "concurrently \"npm run start:frontend\" \"wait-on http://localhost:5173 && npm run start:electron\"",
     "start:frontend": "cd frontend && npm run dev",
     "start:electron": "ELECTRON_START_URL=http://localhost:5173 electron .",
-    "build": "cd frontend && npm run build && cd .. && electron-builder"
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "build:electron": "electron-builder",
+    "build": "npm run build:frontend && npm run build:electron"
   },
   "build": {
     "appId": "com.universalnovelscraper.app",
@@ -28,10 +30,10 @@
     "asar": true,
     "extraResources": [
       {
-        "from": "backend/dist/engine",
-        "to": "bin/engine",
+        "from": "backend/dist",
+        "to": "bin",
         "filter": [
-          "**/*"
+          "engine*"
         ]
       }
     ],

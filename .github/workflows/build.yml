@@ -3,8 +3,8 @@ name: Build and Release Desktop App
 on:
   push:
     tags:
-      - 'v*' # Triggers on tags like v1.0.0
-  workflow_dispatch: # Allows manual triggering
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   release:
@@ -13,8 +13,8 @@ jobs:
     permissions:
       contents: write
     strategy:
+      fail-fast: false
       matrix:
-        # We use Mac, Windows, and Linux runners
         os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
@@ -32,18 +32,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Frontend & Root Dependencies
+      - name: Install & Build Frontend
         run: |
           npm install
-          cd frontend && npm install && npm run build
-          cd ..
+          npm run build:frontend
 
       - name: Build Python Sidecar
         shell: bash
         run: |
           cd backend
           python -m venv venv
-          # Use specific shell activate commands based on OS
           if [ "$RUNNER_OS" == "Windows" ]; then
             source venv/Scripts/activate
           else
@@ -51,23 +49,22 @@ jobs:
           fi
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          # Build the engine
           python -m PyInstaller --noconfirm --onefile --windowed --name "engine" api.py
           cd ..
 
-      - name: Build & Publish Electron App
-        uses: samuelmeuli/action-electron-builder@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Set to true to actually create the GitHub Release
-          release: ${{ startsWith(github.ref, 'refs/tags/') }}
-          # Determine the build command based on OS
-          args: |
-            ${{ matrix.os == 'macos-latest' && '--mac --universal' || '' }}
-            ${{ matrix.os == 'windows-latest' && '--win --x64' || '' }}
+      - name: Build Electron App
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # We run electron-builder directly to avoid input errors
+          # --publish always tells it to upload to your GitHub Releases
+          npx electron-builder --publish always \
+            ${{ matrix.os == 'macos-latest' && '--mac --universal' || '' }} \
+            ${{ matrix.os == 'windows-latest' && '--win --x64' || '' }} \
             ${{ matrix.os == 'ubuntu-latest' && '--linux --AppImage' || '' }}
-          
-      - name: Create Custom Release Notes
+
+      - name: Create Release Notes
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest'
         with:
@@ -77,23 +74,27 @@ jobs:
             
             Download the version specific to your operating system below.
             
-            ### 💻 Installation Instructions
+            ### 💻 Installation & Security (Unsigned Apps)
+
+            #### 🍎 macOS (M1/M2/M3/M4 & Intel)
+            Because this app is not signed with an Apple Developer Certificate, macOS will block it by default. 
             
-            #### 🍎 macOS
-            1. Download the `.dmg` (Universal) file.
-            2. Drag **UNS** to your Applications folder.
-            3. **Note:** On first launch, if you see a developer warning, Right-Click the app and select **Open**.
+            1. Download the `.dmg`, open it, and drag **UNS** to your **Applications** folder.
+            2. Try to open the app. You will see a warning: *"UNS can’t be opened because it is from an unidentified developer."* Click **OK**.
+            3. Open **System Settings** > **Privacy & Security**.
+            4. Scroll down to the **Security** section. You will see a message: *"UNS was blocked from use because it is not from an identified developer."*
+            5. Click **Open Anyway**.
+            6. Enter your Mac password and click **Open** one last time.
             
+            > **Pro Tip:** You can also Right-Click the app in your Applications folder and select **Open** to bypass the block faster.
+
             #### 🪟 Windows
             1. Download the `.exe` installer.
-            2. Run the installer and follow the prompts.
+            2. If Windows SmartScreen blocks it, click **More Info** > **Run Anyway**.
             
             #### 🐧 Linux
             1. Download the `.AppImage`.
             2. Make it executable: `chmod +x UNS-*.AppImage`.
             3. Run the file.
-            
-            ---
-            *Built with ❤️ using Electron + Python Sidecar Architecture.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
