@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import Download from './pages/Download';
 import Library from './pages/Library';
@@ -31,7 +31,7 @@ export default function App() {
   useEffect(() => {
     fetchLibrary();
     window.electronAPI?.onEngineReady(fetchLibrary);
-    
+
     // Listen for global scrape updates
     const handleStatus = (data) => {
       setStatus(data.status);
@@ -49,14 +49,14 @@ export default function App() {
   }, [fetchLibrary]);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <div className="min-h-screen bg-[#0f0f12] text-white selection:bg-blue-500/30">
         <Navigation isScraping={isScraping} />
         <main className="max-w-6xl mx-auto px-6 py-8">
           <Routes>
             <Route path="/" element={<Navigate to="/download" />} />
             <Route path="/download" element={
-              <Download 
+              <Download
                 isScraping={isScraping} setIsScraping={setIsScraping}
                 status={status} setStatus={setStatus}
                 progress={progress} setProgress={setProgress}
@@ -69,6 +69,6 @@ export default function App() {
           </Routes>
         </main>
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

@@ -51,20 +51,20 @@ function createWindow() {
         width: 1200,
         height: 800,
         title: "Universal Novel Scraper",
+        icon: path.join(__dirname, 'assets/icon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
-            devTools: false
+            devTools: true
         }
     });
 
-    const startUrl = process.env.ELECTRON_START_URL ||
-        `file://${path.join(__dirname, './frontend/dist/index.html')}`;
-    mainWindow.loadURL(startUrl);
-
-    if (process.env.DEBUG_DEVTOOLS === 'true') {
-        mainWindow.webContents.openDevTools();
+    if (app.isPackaged) {
+        mainWindow.loadFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+    } else {
+        const startUrl = process.env.ELECTRON_START_URL || 'http://localhost:5173';
+        mainWindow.loadURL(startUrl);
     }
 }
 
@@ -481,6 +481,7 @@ ipcMain.on('open-output-folder', () => {
 });
 
 // ============ APP LIFECYCLE ============
+
 app.on('ready', () => {
     startPythonBackend();
     createWindow();

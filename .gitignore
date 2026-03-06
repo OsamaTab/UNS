@@ -11,3 +11,4 @@ profiles/
 output/
 error_logs/
 node_modules
+dist_electron
