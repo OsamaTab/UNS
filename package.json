@@ -29,9 +29,7 @@
       {
         "from": "backend/dist/engine",
         "to": "bin/engine",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       }
     ],
     "mac": {
