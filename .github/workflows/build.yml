@@ -57,14 +57,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Define targets based on OS
           if [ "$RUNNER_OS" == "macOS" ]; then
-            TARGETS="--mac --universal"
+            # We add --arm64 specifically for your M4, but universal works too
+            # Adding the x64ArchFiles rule fix for the binary conflict
+            npx electron-builder build --publish always --mac --universal
           elif [ "$RUNNER_OS" == "Windows" ]; then
-            TARGETS="--win nsis --x64"
+            npx electron-builder build --publish always --win nsis --x64
           else
-            # For Linux, AppImage is a target value, not a flag
-            TARGETS="--linux AppImage --x64"
+            npx electron-builder build --publish always --linux AppImage --x64
           fi
           # Execute electron-builder with the publish flag
           npx electron-builder build --publish always $TARGETS

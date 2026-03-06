@@ -42,7 +42,12 @@
       "target": "dmg",
       "icon": "assets/icon.icns",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "x64ArchFiles": "**/bin/engine",
+      "extendInfo": {
+        "NSCameraUsageDescription": "This app uses the camera for scraping navigation.",
+        "NSMicrophoneUsageDescription": "This app does not use the microphone."
+      }
     },
     "win": {
       "icon": "assets/icon.ico"

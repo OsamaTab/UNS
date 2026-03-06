@@ -20,22 +20,25 @@ if (!fs.existsSync(outputDir)) {
 }
 
 function startPythonBackend() {
-    const isDev = !app.isPackaged;
+    const isPackaged = app.isPackaged;
+    const enginePath = isPackaged
+        ? path.join(process.resourcesPath, 'bin', 'engine') // For Mac/Linux
+        : path.join(__dirname, 'backend', 'dist', 'engine'); // For Dev
 
-    // Adjust based on your build structure
-    const backendPath = isDev
-        ? path.join(__dirname, 'backend', 'dist', 'engine')
-        : path.join(process.resourcesPath, 'bin', 'engine');
+    // For Windows in production, you'd need to append .exe
+    const finalPath = (isPackaged && process.platform === 'win32')
+        ? `${enginePath}.exe`
+        : enginePath;
 
-    console.log("🔧 Engine path:", backendPath);
+    console.log("🔧 Engine path:", finalPath);
     console.log("📂 Storage path:", outputDir);
 
-    if (process.platform === 'darwin' && fs.existsSync(backendPath)) {
-        require('child_process').execSync(`chmod +x "${backendPath}"`);
+    if (process.platform === 'darwin' && fs.existsSync(finalPath)) {
+        require('child_process').execSync(`chmod +x "${finalPath}"`);
     }
 
     // PASS outputDir AS THE FIRST ARGUMENT
-    pythonProcess = execFile(backendPath, [outputDir], { windowsHide: true }, (err) => {
+    pythonProcess = execFile(finalPath, [outputDir], { windowsHide: true }, (err) => {
         if (err) {
             console.error("❌ Engine failed:", err);
         }
