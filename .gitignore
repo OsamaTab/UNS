@@ -1,0 +1,22 @@
+# Mac artifacts
+.DS_Store
+
+# Python artifacts
+__pycache__/
+*.pyc
+venv/
+/dist
+/build
+*/dist
+*/build
+
+# Scraper artifacts
+*.epub
+*.jsonl
+jobs_history.json
+
+# Botasaurus artifacts
+profiles/
+output/
+error_logs/
+node_modules

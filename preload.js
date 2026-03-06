@@ -1,0 +1,24 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    // Scraper control
+    startScrape: (jobData) => ipcRenderer.send('start-browser-scrape', jobData),
+    stopScrape: (jobData) => ipcRenderer.send('stop-scrape', jobData),
+    toggleScraper: (show) => ipcRenderer.send('toggle-scraper-view', show),
+    
+    // Progress listeners
+    onScrapeStatus: (callback) => {
+        ipcRenderer.on('scrape-status', (event, data) => callback(data));
+    },
+    onPythonError: (callback) => {
+        ipcRenderer.on('python-error', (event, data) => callback(data));
+    },
+    onHumanActionNeeded: (callback) => {
+        ipcRenderer.on('human-action-needed', (event, data) => callback(data));
+    },
+    
+    // Remove listeners on cleanup
+    removeStatusListener: () => ipcRenderer.removeAllListeners('scrape-status'),
+    removeErrorListener: () => ipcRenderer.removeAllListeners('python-error'),
+    removeHumanActionListener: () => ipcRenderer.removeAllListeners('human-action-needed')
+});
