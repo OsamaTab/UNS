@@ -1,0 +1,296 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Square, Shield, ExternalLink, Terminal, Loader2, BookOpen } from 'lucide-react';
+
+export default function Download({ 
+  isScraping, setIsScraping, status, setStatus, 
+  progress, setProgress, currentJobId, setCurrentJobId 
+}) {
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [author, setAuthor] = useState('');
+  const [enableCloudflareBypass, setEnableCloudflareBypass] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [chaptersFound, setChaptersFound] = useState(0);
+  const [chaptersScraped, setChaptersScraped] = useState(0);
+  const logEndRef = useRef(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  useEffect(() => {
+    const handleLog = (data) => {
+      const timestamp = new Date().toLocaleTimeString([], { 
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' 
+      });
+      setLogs(prev => [...prev, { time: timestamp, msg: data.message || data.status || "Update received" }]);
+      
+      // Update status
+      if (data.status) setStatus(data.status);
+      
+      // Update chapter counts from log messages
+      if (data.message) {
+        // Check for chapter found messages
+        const foundMatch = data.message.match(/Found chapter:? (\d+)/i) || 
+                          data.message.match(/Chapter (\d+) found/i) ||
+                          data.message.match(/Found (\d+) chapters?/i);
+        if (foundMatch) {
+          const count = parseInt(foundMatch[1]);
+          if (!isNaN(count)) {
+            if (data.message.toLowerCase().includes('found') && !data.message.toLowerCase().includes('scraped')) {
+              setChaptersFound(prev => Math.max(prev, count));
+            }
+          }
+        }
+        
+        // Check for chapter scraped messages
+        const scrapedMatch = data.message.match(/Scraped chapter:? (\d+)/i) ||
+                            data.message.match(/Chapter (\d+) scraped/i) ||
+                            data.message.match(/Scraped (\d+) chapters?/i);
+        if (scrapedMatch) {
+          const count = parseInt(scrapedMatch[1]);
+          if (!isNaN(count)) {
+            setChaptersScraped(prev => Math.max(prev, count));
+          }
+        }
+      }
+    };
+    
+    window.electronAPI?.onScrapeStatus(handleLog);
+    return () => window.electronAPI?.removeStatusListener();
+  }, [setStatus]);
+
+  const handleStart = () => {
+    if (!url || !name) return;
+    
+    // Reset counters
+    setChaptersFound(0);
+    setChaptersScraped(0);
+    setLogs([{ time: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }), msg: 'Initializing engine...' }]);
+    
+    const jobId = crypto.randomUUID();
+    setCurrentJobId(jobId);
+    setIsScraping(true);
+    window.electronAPI?.startScrape({ 
+      job_id: jobId, 
+      start_url: url, 
+      novel_name: name, 
+      author, 
+      enable_cloudflare_bypass: enableCloudflareBypass 
+    });
+  };
+
+  const handleStop = () => {
+    setIsScraping(false);
+    window.electronAPI?.stopScrape();
+  };
+
+  // Calculate progress percentage based on chapters
+  const progressPercentage = chaptersFound > 0 
+    ? Math.round((chaptersScraped / chaptersFound) * 100) 
+    : progress || 0;
+
+  return (
+    <div className="max-w-6xl mx-auto px-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">Download Manager</h1>
+          <p className="text-sm text-zinc-500">Terminal interface v2.0</p>
+        </div>
+        
+        {isScraping && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 rounded-full">
+            <Loader2 size={14} className="text-blue-400 animate-spin" />
+            <span className="text-xs font-medium text-blue-400">Processing</span>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        {/* Input Panel */}
+        <div className="col-span-2 space-y-6">
+          <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 p-6">
+            <div className="space-y-5">
+              {/* URL Field */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  Source URL
+                </label>
+                <input 
+                  value={url} 
+                  onChange={e => setUrl(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                  placeholder="https://..."
+                  disabled={isScraping}
+                />
+              </div>
+
+              {/* Title & Author Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                    Novel Title
+                  </label>
+                  <input 
+                    value={name} 
+                    onChange={e => setName(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                    placeholder="Title"
+                    disabled={isScraping}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                    Author
+                  </label>
+                  <input 
+                    value={author} 
+                    onChange={e => setAuthor(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                    placeholder="Author"
+                    disabled={isScraping}
+                  />
+                </div>
+              </div>
+
+              {/* Cloudflare Toggle */}
+              <div className="pt-2">
+                <button
+                  onClick={() => !isScraping && setEnableCloudflareBypass(!enableCloudflareBypass)}
+                  className={`flex items-center justify-between w-full p-4 rounded-lg border transition ${
+                    enableCloudflareBypass 
+                      ? 'bg-blue-500/10 border-blue-500/30' 
+                      : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-900'
+                  }`}
+                  disabled={isScraping}
+                >
+                  <div className="flex items-center gap-3">
+                    <Shield size={18} className={enableCloudflareBypass ? 'text-blue-400' : 'text-zinc-500'} />
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-white">Cloudflare Bypass</p>
+                      <p className="text-xs text-zinc-500">Enable anti-bot protection</p>
+                    </div>
+                  </div>
+                  <div className={`w-2 h-2 rounded-full ${
+                    enableCloudflareBypass ? 'bg-blue-500' : 'bg-zinc-700'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Action Button */}
+              <button 
+                onClick={isScraping ? handleStop : handleStart}
+                className={`w-full py-3 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
+                  isScraping 
+                    ? 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20' 
+                    : 'bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+                disabled={!url || !name}
+              >
+                {isScraping ? (
+                  <>
+                    <Square size={16} />
+                    <span>Abort Download</span>
+                  </>
+                ) : (
+                  <>
+                    <Play size={16} />
+                    <span>Start Download</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Job Info */}
+          <div className="bg-zinc-900/30 rounded-xl border border-zinc-800 p-4">
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <Terminal size={14} />
+              <span>Job ID: {currentJobId || 'Not started'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Monitor Panel */}
+        <div className="space-y-6">
+          <div className="bg-zinc-900/50 rounded-xl border border-zinc-800 h-125 flex flex-col">
+            {/* Monitor Header */}
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Terminal size={16} className="text-zinc-500" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  Console Output
+                </span>
+              </div>
+              <button 
+                onClick={() => { setShowBrowser(!showBrowser); window.electronAPI?.toggleScraper(!showBrowser); }}
+                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-500 hover:text-white transition"
+              >
+                <ExternalLink size={14} />
+              </button>
+            </div>
+
+            {/* Status & Chapter Counter */}
+            <div className="p-4 border-b border-zinc-800 bg-zinc-900/30">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs text-zinc-500 mb-1">Status</p>
+                  <p className="text-sm font-medium text-white">{status || 'Ready'}</p>
+                </div>
+                
+                {/* Chapter Counter */}
+                {isScraping && (
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xs text-zinc-500 mb-1">Chapters</p>
+                      <div className="flex items-center gap-2">
+                        <BookOpen size={14} className="text-blue-400" />
+                        <span className="text-sm font-medium text-white">
+                          {chaptersScraped} / {chaptersFound || '?'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Progress Bar */}
+              {isScraping && (
+                <div className="space-y-2">
+                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${progressPercentage}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <span className="text-xs text-zinc-500">{progressPercentage}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Logs */}
+            <div className="flex-1 overflow-y-auto p-4 font-mono text-xs">
+              <div className="space-y-2">
+                {logs.length === 0 ? (
+                  <p className="text-zinc-600 italic">No output yet...</p>
+                ) : (
+                  logs.map((log, i) => (
+                    <div key={i} className="flex gap-3">
+                      <span className="text-zinc-600 whitespace-nowrap">[{log.time}]</span>
+                      <span className="text-zinc-300 break-all">{log.msg}</span>
+                    </div>
+                  ))
+                )}
+                <div ref={logEndRef} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

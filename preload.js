@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startScrape: (jobData) => ipcRenderer.send('start-browser-scrape', jobData),
     stopScrape: (jobData) => ipcRenderer.send('stop-scrape', jobData),
     toggleScraper: (show) => ipcRenderer.send('toggle-scraper-view', show),
+    onEngineReady: (callback) => ipcRenderer.on('engine-ready', callback),
     
     // Progress listeners
     onScrapeStatus: (callback) => {
@@ -20,5 +21,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Remove listeners on cleanup
     removeStatusListener: () => ipcRenderer.removeAllListeners('scrape-status'),
     removeErrorListener: () => ipcRenderer.removeAllListeners('python-error'),
-    removeHumanActionListener: () => ipcRenderer.removeAllListeners('human-action-needed')
+    removeHumanActionListener: () => ipcRenderer.removeAllListeners('human-action-needed'),
+    removeEngineReadyListener: () => ipcRenderer.removeAllListeners('engine-ready')
 });

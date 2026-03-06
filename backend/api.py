@@ -2,21 +2,43 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uuid
 import os
 import json
 import re
 import base64
+import sys
 from ebooklib import epub
 from contextlib import asynccontextmanager
 from typing import Optional
 
-HISTORY_FILE = "jobs_history.json"
-ACTIVE_SCRAPES_FILE = "active_scrapes.json"
+# ============ PATH SETUP ============
+# Electron will pass the 'userData' path as the first argument
+BASE_OUTPUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.getcwd(), "output")
+
+# Define subdirectories for organized storage
+HISTORY_DIR = os.path.join(BASE_OUTPUT, "history")
+JOBS_DIR = os.path.join(BASE_OUTPUT, "jobs")
+EPUB_DIR = os.path.join(BASE_OUTPUT, "epubs")
+
+# Create directories if they don't exist
+for folder in [HISTORY_DIR, JOBS_DIR, EPUB_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+HISTORY_FILE = os.path.join(HISTORY_DIR, "jobs_history.json")
+ACTIVE_SCRAPES_FILE = os.path.join(HISTORY_DIR, "active_scrapes.json")
+
+# Helper functions for path management
+def get_progress_file(job_id):
+    return os.path.join(JOBS_DIR, f"{job_id}_progress.jsonl")
+
+def get_epub_file(job_id):
+    return os.path.join(EPUB_DIR, f"{job_id}.epub")
+
+# ============ ENGINE LOGIC ============
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Engine starting...")
+    print(f"🚀 Engine starting... Data home: {BASE_OUTPUT}")
     yield
     print("💤 Engine shutting down...")
 
@@ -30,7 +52,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============ HISTORY MANAGEMENT ============
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -55,12 +76,6 @@ jobs = load_history()
 active_scrapes = load_active_scrapes()
 
 # ============ MODELS ============
-class ChapterData(BaseModel):
-    job_id: str
-    novel_name: str
-    chapter_title: str
-    content: list
-
 class FinalizeData(BaseModel):
     job_id: str
     novel_name: str
@@ -79,6 +94,7 @@ class ResumeScrapeData(BaseModel):
     cover_data: str = ""
 
 # ============ ENDPOINTS ============
+
 @app.get("/api/history")
 def get_history():
     return jobs
@@ -89,7 +105,7 @@ def check_status(job_id: str):
     status = job_info.get("status", "not found")
     progress_text = "0 chapters scraped"
     
-    progress_file = f"{job_id}_progress.jsonl"
+    progress_file = get_progress_file(job_id)
     if os.path.exists(progress_file):
         try:
             with open(progress_file, "r", encoding="utf-8") as f:
@@ -98,63 +114,85 @@ def check_status(job_id: str):
         except Exception:
             pass
     
-    # Check if there's a paused scrape
     if job_id in active_scrapes:
-        scrape_info = active_scrapes[job_id]
         status = "paused"
-        progress_text += f" (Last: {scrape_info.get('last_chapter', 'N/A')})"
+        progress_text += f" (Last: {active_scrapes[job_id].get('last_chapter', 'N/A')})"
     
     return {
         "job_id": job_id, 
         "status": status, 
         "progress": progress_text,
+        "chapters_count": chapter_count,
         "novel_name": job_info.get("novel_name", "Unknown")
     }
 
 @app.post("/api/save-chapter")
 def save_chapter(data: dict):
-    job_id = data["job_id"]
-    progress_file = f"{job_id}_progress.jsonl"
+    job_id = data.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Missing job_id")
+        
+    progress_file = get_progress_file(job_id)
     
-    # Save chapter data
-    chapter_info = [data["chapter_title"], data["content"]]
+    # 1. Prepare Chapter Data
+    chapter_title = data.get("chapter_title", "Untitled")
+    content = data.get("content", [])
+    chapter_info = [chapter_title, content]
+    
+    # 2. Append to progress file (.jsonl)
+    # Using 'a' (append) so we don't overwrite previous chapters
     with open(progress_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(chapter_info, ensure_ascii=False) + "\n")
     
-    # Update job status
+    # 3. Update the Bookmark in memory (jobs dictionary)
+    # We want to save the 'next_url' as the 'start_url' for the next session
+    next_chapter_url = data.get("next_url") or data.get("start_url")
+
     if job_id not in jobs:
+        # Initial creation if not in history
         jobs[job_id] = {
-            "novel_name": data["novel_name"],
+            "novel_name": data.get("novel_name", "Unknown Novel"),
             "status": "processing",
-            "author": data.get("author", ""),
+            "author": data.get("author", "Unknown"),
             "cover_data": data.get("cover_data", ""),
-            "start_url": data.get("start_url", "")
+            "start_url": next_chapter_url,
+            "last_updated": str(os.path.getmtime(progress_file)) if os.path.exists(progress_file) else ""
         }
     else:
+        # Update existing job
         jobs[job_id]["status"] = "processing"
-        # Update start_url for resume capability
-        if data.get("start_url"):
-            jobs[job_id]["start_url"] = data["start_url"]
-    
+        
+        # 🔥 THE CRITICAL "RESUME" FIX:
+        # If the scraper found a 'Next' button, we save that URL.
+        # This way, when you click 'Resume', the scraper starts at the NEW URL.
+        if next_chapter_url:
+            jobs[job_id]["start_url"] = next_chapter_url
+            
+    # 4. Persistence: Force save to the .json file immediately
     save_history(jobs)
-    return {"status": "ok", "job_id": job_id}
+    
+    print(f"📖 Saved: {chapter_title} | Bookmark set to: {next_chapter_url}")
+    
+    return {
+        "status": "ok", 
+        "job_id": job_id, 
+        "bookmark_saved": next_chapter_url
+    }
 
 @app.post("/api/finalize-epub")
 def finalize_epub(data: FinalizeData):
     job_id = data.job_id
-    progress_file = f"{job_id}_progress.jsonl"
-    epub_file = f"{job_id}.epub"
+    progress_file = get_progress_file(job_id)
+    epub_file = get_epub_file(job_id)
     
     if not os.path.exists(progress_file):
-        raise HTTPException(status_code=404, detail="No chapters found for this job")
+        raise HTTPException(status_code=404, detail="No chapters found")
     
-    # Load all chapters
     chapters = []
     with open(progress_file, "r", encoding="utf-8") as f:
         for line in f:
             chapters.append(json.loads(line))
     
-    # Create EPUB
     create_epub(
         novel_title=data.novel_name,
         author=data.author,
@@ -163,14 +201,12 @@ def finalize_epub(data: FinalizeData):
         cover_data=data.cover_data
     )
     
-    # Update job status
     jobs[job_id]["status"] = "completed"
     if job_id in active_scrapes:
         del active_scrapes[job_id]
         save_active_scrapes(active_scrapes)
     save_history(jobs)
     
-    # Clean up progress file
     if os.path.exists(progress_file):
         os.remove(progress_file)
     
@@ -178,8 +214,7 @@ def finalize_epub(data: FinalizeData):
 
 @app.get("/api/download/{job_id}")
 def download_epub(job_id: str):
-    file_path = f"{job_id}.epub"
-    
+    file_path = get_epub_file(job_id)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="EPUB not ready")
     
@@ -187,166 +222,61 @@ def download_epub(job_id: str):
     raw_name = job_info.get("novel_name", "Scraped_Novel")
     safe_name = re.sub(r'[\\/*?:"<>|]', "", raw_name).replace(" ", "_")
     
-    return FileResponse(
-        file_path, 
-        media_type='application/epub+zip', 
-        filename=f"{safe_name}.epub"
-    )
+    return FileResponse(file_path, media_type='application/epub+zip', filename=f"{safe_name}.epub")
 
-# ============ STOP SCRAPE ============
 @app.post("/api/stop-scrape")
 def stop_scrape(data: StopScrapeData):
     job_id = data.job_id
-    
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # Mark as paused (not deleted, so we can resume)
     jobs[job_id]["status"] = "paused"
-    jobs[job_id]["stop_reason"] = data.reason
     save_history(jobs)
     
-    # Store scrape state for resume
-    progress_file = f"{job_id}_progress.jsonl"
+    progress_file = get_progress_file(job_id)
     chapter_count = 0
     last_chapter = "N/A"
     
     if os.path.exists(progress_file):
         with open(progress_file, "r", encoding="utf-8") as f:
-            chapters = [json.loads(line) for line in f]
-            chapter_count = len(chapters)
-            if chapters:
-                last_chapter = chapters[-1][0]  # Chapter title
+            lines = f.readlines()
+            chapter_count = len(lines)
+            if lines:
+                last_chapter = json.loads(lines[-1])[0]
     
-    active_scrapes[job_id] = {
-        "paused_at": chapter_count,
-        "last_chapter": last_chapter,
-        "stop_reason": data.reason
-    }
+    active_scrapes[job_id] = {"paused_at": chapter_count, "last_chapter": last_chapter}
     save_active_scrapes(active_scrapes)
-    
-    print(f"⏸️ Stopped scrape for '{jobs[job_id]['novel_name']}' at chapter {chapter_count}")
-    
-    return {
-        "status": "paused",
-        "job_id": job_id,
-        "chapters_saved": chapter_count,
-        "last_chapter": last_chapter
-    }
-
-# ============ RESUME SCRAPE ============
-@app.post("/api/resume-scrape")
-def resume_scrape(data: ResumeScrapeData):
-    job_id = data.job_id
-    
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    # Check if EPUB already exists (completed)
-    if os.path.exists(f"{job_id}.epub"):
-        raise HTTPException(status_code=400, detail="This novel is already completed")
-    
-    # Update status to processing
-    jobs[job_id]["status"] = "processing"
-    jobs[job_id]["start_url"] = data.start_url
-    jobs[job_id]["novel_name"] = data.novel_name
-    jobs[job_id]["author"] = data.author
-    jobs[job_id]["cover_data"] = data.cover_data
-    save_history(jobs)
-    
-    # Remove from paused list
-    if job_id in active_scrapes:
-        del active_scrapes[job_id]
-        save_active_scrapes(active_scrapes)
-    
-    # Get current chapter count
-    progress_file = f"{job_id}_progress.jsonl"
-    chapter_count = 0
-    if os.path.exists(progress_file):
-        with open(progress_file, "r", encoding="utf-8") as f:
-            chapter_count = sum(1 for _ in f)
-    
-    print(f"▶️ Resuming scrape for '{data.novel_name}' from chapter {chapter_count + 1}")
-    
-    return {
-        "status": "resumed",
-        "job_id": job_id,
-        "start_url": data.start_url,
-        "chapters_already_saved": chapter_count
-    }
+    return {"status": "paused", "job_id": job_id}
 
 @app.delete("/api/novel/{job_id}")
 def delete_novel(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Novel not found")
+    files = [get_epub_file(job_id), get_progress_file(job_id)]
+    for f in files:
+        if os.path.exists(f): os.remove(f)
     
-    novel_info = jobs.get(job_id, {})
-    novel_name = novel_info.get("novel_name", "Unknown")
-    
-    # Delete associated files
-    files_to_delete = [
-        f"{job_id}.epub",
-        f"{job_id}_progress.jsonl"
-    ]
-    
-    deleted_files = []
-    for file_path in files_to_delete:
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                deleted_files.append(file_path)
-            except Exception as e:
-                print(f"⚠️ Could not delete {file_path}: {e}")
-    
-    # Remove from history and active scrapes
-    del jobs[job_id]
+    if job_id in jobs: del jobs[job_id]
+    if job_id in active_scrapes: del active_scrapes[job_id]
     save_history(jobs)
-    
-    if job_id in active_scrapes:
-        del active_scrapes[job_id]
-        save_active_scrapes(active_scrapes)
-    
-    print(f"🗑️ Deleted novel '{novel_name}' (ID: {job_id})")
-    
-    return {
-        "status": "deleted",
-        "job_id": job_id,
-        "novel_name": novel_name,
-        "files_removed": deleted_files
-    }
+    save_active_scrapes(active_scrapes)
+    return {"status": "deleted"}
 
-# ============ EPUB CREATION ============
 def create_epub(novel_title, author, chapters, output_filename, cover_data=""):
     book = epub.EpubBook()
     book.set_title(novel_title)
-    book.set_language('en')
-    
-    if author:
-        book.add_author(author)
+    if author: book.add_author(author)
     
     if cover_data:
         try:
-            print(f"📚 Processing cover for: {novel_title}")
             header, encoded = cover_data.split(",", 1)
             ext = header.split(";")[0].split("/")[1]
-            cover_bytes = base64.b64decode(encoded)
-            book.set_cover(f"cover.{ext}", cover_bytes)
-        except Exception as e:
-            print(f"⚠️ Cover error: {e}")
+            book.set_cover(f"cover.{ext}", base64.b64decode(encoded))
+        except: pass
     
     spine = ['nav']
     toc = []
-
     for i, (title, content) in enumerate(chapters):
-        file_name = f'chap_{i+1}.xhtml'
-        chapter = epub.EpubHtml(title=title, file_name=file_name, lang='en')
-        
-        html_content = f'<h1>{title}</h1>'
-        for paragraph in content:
-            if paragraph.strip(): 
-                html_content += f'<p>{paragraph}</p>'
-        
-        chapter.content = html_content
+        chapter = epub.EpubHtml(title=title, file_name=f'chap_{i+1}.xhtml')
+        chapter.content = f'<h1>{title}</h1>' + "".join([f'<p>{p}</p>' for p in content if p.strip()])
         book.add_item(chapter)
         spine.append(chapter)
         toc.append(chapter)
@@ -354,10 +284,14 @@ def create_epub(novel_title, author, chapters, output_filename, cover_data=""):
     book.toc = tuple(toc)
     book.add_item(epub.EpubNav())
     book.spine = spine
-    
     epub.write_epub(output_filename, book)
-    print(f"✅ EPUB saved: {output_filename} ({len(chapters)} chapters)")
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "version": "1.0.0"}
 
 if __name__ == "__main__":
     import uvicorn
+    # Use port 8000 by default
     uvicorn.run(app, host="127.0.0.1", port=8000)

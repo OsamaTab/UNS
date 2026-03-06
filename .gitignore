@@ -1,15 +1,6 @@
 # Mac artifacts
 .DS_Store
 
-# Python artifacts
-__pycache__/
-*.pyc
-venv/
-/dist
-/build
-*/dist
-*/build
-
 # Scraper artifacts
 *.epub
 *.jsonl

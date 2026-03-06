@@ -1,44 +1,48 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const axios = require('axios');
+const fs = require('fs');
 
 let mainWindow = null;
 let scraperWindow = null;
 let pythonProcess = null;
 let isScraping = false;
-let currentJobId = null;
-let scrapeCancelled = false;
-let enableCloudflareBypass = false;
-let waitingForHuman = false;  // 👈 NEW: Track if waiting for user
+let scrapeCancelled = false; // The Master Switch
 
-// ============ PYTHON BACKEND MANAGEMENT ============
+// ============ PATHS ============
+const userDataPath = app.getPath('userData');
+const outputDir = path.join(userDataPath, 'output');
+
+// Ensure the directory exists before starting Python
+if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+}
+
 function startPythonBackend() {
     const isDev = !app.isPackaged;
+
+    // Adjust based on your build structure
     const backendPath = isDev
-        ? path.join(__dirname, 'frontend', 'resources', 'bin', 'scraper-engine')
-        : path.join(process.resourcesPath, 'bin', 'scraper-engine');
+        ? path.join(__dirname, 'backend', 'dist', 'engine')
+        : path.join(process.resourcesPath, 'bin', 'engine');
 
     console.log("🔧 Engine path:", backendPath);
+    console.log("📂 Storage path:", outputDir);
 
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && fs.existsSync(backendPath)) {
         require('child_process').execSync(`chmod +x "${backendPath}"`);
     }
 
-    pythonProcess = execFile(backendPath, { windowsHide: true }, (err) => {
+    // PASS outputDir AS THE FIRST ARGUMENT
+    pythonProcess = execFile(backendPath, [outputDir], { windowsHide: true }, (err) => {
         if (err) {
             console.error("❌ Engine failed:", err);
-            mainWindow?.webContents.send('python-error', err.message);
         }
     });
 
-    pythonProcess.stdout?.on('data', (data) => {
-        console.log(`🐍 Python: ${data}`);
-    });
-
-    pythonProcess.stderr?.on('data', (data) => {
-        console.error(`🐍 Python Error: ${data}`);
-    });
+    pythonProcess.stdout?.on('data', (data) => console.log(`🐍 Python: ${data}`));
+    pythonProcess.stderr?.on('data', (data) => console.error(`🐍 Python Error: ${data}`));
 }
 
 // ============ MAIN WINDOW ============
@@ -150,135 +154,150 @@ function getRandomTimeout(min, max) {
 
 // ============ SCRAPING LOGIC (With Human Interaction) ============
 async function scrapeChapter(event, jobData, url, chapterNum) {
+    // ============ 🛑 CHECKPOINT 1: START OF LOOP ============
     if (scrapeCancelled) {
-        event.sender.send('scrape-status', { 
-            status: 'CANCELLED', 
-            message: '⏹️ Scraping cancelled by user' 
-        });
+        console.log("🛑 Scraping stopped by user before loading.");
         isScraping = false;
-        scraperWindow?.hide();
         return;
     }
 
     if (!scraperWindow || scraperWindow.isDestroyed()) {
         createScraperWindow();
     }
-    
-    event.sender.send('scrape-status', { 
-        status: 'LOADING', 
-        message: `Chapter ${chapterNum}: Loading...` 
+
+    // Notify React UI
+    event.sender.send('scrape-status', {
+        status: 'LOADING',
+        message: `Chapter ${chapterNum}: Fetching URL...`
     });
 
     try {
-        // Load page
+        // ============ 🌐 LOAD PAGE ============
         await scraperWindow.loadURL(url);
-        
-        // 👉 RANDOM TIMEOUT: 1.5-4 sec for Cloudflare, 0-1 sec for normal
-        const loadTimeout = enableCloudflareBypass 
-            ? getRandomTimeout(1500, 4000)  
-            : getRandomTimeout(0, 1000);
-        
-        console.log(`⏱️ Load timeout: ${loadTimeout}ms (Cloudflare: ${enableCloudflareBypass})`);
-        
-        await new Promise(resolve => {
-            scraperWindow.webContents.once('did-finish-load', resolve);
-            setTimeout(resolve, loadTimeout);
-        });
 
-        // Check for Cloudflare
+        // Handle Cloudflare/Normal wait times
+        const loadTimeout = enableCloudflareBypass
+            ? getRandomTimeout(1500, 4000)
+            : getRandomTimeout(500, 1000);
+
+        await new Promise(resolve => setTimeout(resolve, loadTimeout));
+
+        // ============ 🛑 CHECKPOINT 2: AFTER LOAD ============
+        if (scrapeCancelled) return;
+
+        // Check for Cloudflare Challenge
         const hasCloudflare = await detectCloudflare(scraperWindow);
-        
+
         if (hasCloudflare && enableCloudflareBypass) {
-            event.sender.send('scrape-status', { 
-                status: 'CLOUDFLARE', 
-                message: '🛡️ Cloudflare detected - Showing browser for manual solve...' 
+            event.sender.send('scrape-status', {
+                status: 'CLOUDFLARE',
+                message: '🛡️ Cloudflare detected - Manual solve required.'
             });
-            
-            // Show the browser window so user can solve it
+
             scraperWindow.show();
             scraperWindow.focus();
             waitingForHuman = true;
-            
-            // Notify user via main window
-            event.sender.send('human-action-needed', {
-                message: '🛡️ Cloudflare Challenge Detected!',
-                instruction: 'Please solve the challenge in the browser window, then scraping will continue automatically.'
-            });
-            
-            // Wait for user to solve it
+
             const solved = await waitForCloudflareSolve(scraperWindow, jobData.job_id);
-            
             waitingForHuman = false;
-            
-            if (!solved) {
-                if (scrapeCancelled) {
-                    return;
-                }
-                throw new Error('Cloudflare challenge timeout - please try again');
-            }
-            
-            // Random wait after solve (1-3 sec)
-            const postSolveWait = getRandomTimeout(1000, 3000);
-            await new Promise(r => setTimeout(r, postSolveWait));
-            
-            // Hide window again if user didn't toggle "Watch Live"
-            if (!showBrowserWindow) {
-                scraperWindow.hide();
-            }
+
+            if (!solved || scrapeCancelled) return;
+
+            // Brief pause after solving to let page settle
+            await new Promise(r => setTimeout(r, 2000));
+            if (!showBrowserWindow) scraperWindow.hide();
         }
 
-        // Extract content
+        // ============ 🧠 EXTRACTION ============
+        // We extract content AND the 'Next' button URL
         const pageData = await scraperWindow.webContents.executeJavaScript(`
             (() => {
-                const title = document.querySelector('.chr-title, .chapter-title, h1, h2')?.innerText?.trim();
-                const paragraphs = Array.from(document.querySelectorAll('#chr-content p, .chapter-content p, .reading-content p, #chapter-content p'))
+                const title = document.querySelector('.chr-title, .chapter-title, h1, h2, .entry-title')?.innerText?.trim();
+                
+                // Common content selectors for novel sites
+                const contentSelectors = [
+                    '#chr-content p', '.chapter-content p', 
+                    '.reading-content p', '#chapter-content p', 
+                    '.fr-view p', '.text-left p'
+                ];
+                
+                let paragraphs = [];
+                for (let selector of contentSelectors) {
+                    const found = Array.from(document.querySelectorAll(selector))
                                        .map(p => p.innerText.trim())
                                        .filter(p => p.length > 0);
+                    if (found.length > 0) {
+                        paragraphs = found;
+                        break;
+                    }
+                }
+
+                // Find the Next Chapter link
                 const nextBtn = Array.from(document.querySelectorAll('a')).find(a => {
                     const text = (a.innerText || '').toLowerCase();
-                    const id = (a.id || '').toLowerCase();
-                    const cls = (a.className || '').toLowerCase();
-                    return text.includes('next') || id.includes('next') || cls.includes('next');
+                    const href = (a.getAttribute('href') || '').toLowerCase();
+                    return (text.includes('next') || href.includes('next')) && 
+                           !text.includes('previous') && 
+                           a.href && a.href !== window.location.href;
                 });
-                const nextUrl = nextBtn?.href || null;
-                return { title: title || 'Untitled', paragraphs, nextUrl };
+
+                return { 
+                    title: title || 'Untitled Chapter', 
+                    paragraphs, 
+                    nextUrl: nextBtn?.href || null 
+                };
             })()
         `);
 
-        // Validate we got content
+        // Validate content
         if (!pageData.paragraphs || pageData.paragraphs.length === 0) {
-            throw new Error('No content found on page');
+            throw new Error('No content found. The site structure might have changed.');
         }
 
-        // Send to Python
+        // ============ 🛑 CHECKPOINT 3: BEFORE SAVE ============
+        if (scrapeCancelled) return;
+
+        // ============ 💾 SAVE TO BACKEND ============
+        // We send 'nextUrl' as the bookmark for the Resume feature
         await axios.post('http://127.0.0.1:8000/api/save-chapter', {
             job_id: jobData.job_id,
             novel_name: jobData.novel_name,
             chapter_title: pageData.title,
             content: pageData.paragraphs,
-            start_url: url
+            start_url: url,
+            next_url: pageData.nextUrl
         });
 
-        event.sender.send('scrape-status', { 
-            status: 'SAVED', 
-            message: `✓ Chapter ${chapterNum}: ${pageData.title}` 
+        event.sender.send('scrape-status', {
+            status: 'SAVED',
+            message: `✓ Saved Chapter ${chapterNum}: ${pageData.title}`
         });
 
-        // Continue to next chapter
+        // ============ 🔁 LOOP OR FINISH ============
         if (pageData.nextUrl && pageData.nextUrl !== url) {
-            // 👉 RANDOM DELAY BETWEEN CHAPTERS
-            const delay = enableCloudflareBypass 
-                ? getRandomTimeout(2000, 5000)   // 2-5 sec for Cloudflare sites
-                : getRandomTimeout(500, 1500);   // 0.5-1.5 sec for normal sites
-            
-            console.log(`⏱️ Next chapter delay: ${delay}ms`);
-            await new Promise(r => setTimeout(r, delay));
+
+            const delay = enableCloudflareBypass
+                ? getRandomTimeout(3000, 6000)
+                : getRandomTimeout(1000, 2000);
+
+            // ============ 🛑 CHECKPOINT 4: SMART DELAY ============
+            // Break the long wait into 100ms chunks so "Stop" is instant
+            for (let i = 0; i < delay; i += 100) {
+                if (scrapeCancelled) {
+                    isScraping = false;
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            // Recursive call for next chapter
             await scrapeChapter(event, jobData, pageData.nextUrl, chapterNum + 1);
+
         } else {
-            // Finalize EPUB
-            event.sender.send('scrape-status', { 
-                status: 'FINALIZING', 
-                message: '📦 Creating EPUB...' 
+            // ============ 📦 FINALIZE ============
+            event.sender.send('scrape-status', {
+                status: 'FINALIZING',
+                message: '📦 Generating EPUB file...'
             });
 
             await axios.post('http://127.0.0.1:8000/api/finalize-epub', {
@@ -288,62 +307,106 @@ async function scrapeChapter(event, jobData, url, chapterNum) {
                 cover_data: jobData.cover_data
             });
 
-            event.sender.send('scrape-status', { 
-                status: 'COMPLETED', 
-                message: '✅ EPUB Created Successfully!' 
+            event.sender.send('scrape-status', {
+                status: 'COMPLETED',
+                message: '✅ Success! EPUB is ready in your library.'
             });
 
             isScraping = false;
-            currentJobId = null;
-            scraperWindow?.hide();
+            if (!showBrowserWindow) scraperWindow?.hide();
         }
 
     } catch (err) {
-        console.error("Scrape error:", err);
-        event.sender.send('scrape-status', { 
-            status: 'ERROR', 
-            message: `Chapter ${chapterNum}: ${err.message}` 
+        console.error("❌ Scrape error:", err);
+        event.sender.send('scrape-status', {
+            status: 'ERROR',
+            message: `Error at Chapter ${chapterNum}: ${err.message}`
         });
         isScraping = false;
     }
 }
 
+async function waitForEngine(mainWindow, attempts = 10) {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            await axios.get('http://127.0.0.1:8000/api/health');
+            console.log("✅ Engine is responsive!");
+            // Signal the frontend that the engine is ready
+            mainWindow.webContents.send('engine-ready');
+            return true;
+        } catch (e) {
+            console.log(`⏳ Waiting for engine... (Attempt ${i + 1}/${attempts})`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+    console.error("❌ Engine timed out.");
+}
+
 // ============ TRACK BROWSER VIEW STATE ============
 let showBrowserWindow = false;
 
-// ============ IPC HANDLERS ============
+// ============ IPC: START / RESUME ============
 ipcMain.on('start-browser-scrape', async (event, jobData) => {
-    if (isScraping) {
-        event.sender.send('scrape-status', {
-            status: 'ERROR',
-            message: 'Scraping already in progress'
-        });
+    // 1. Safety Guard
+    if (isScraping && currentJobId === jobData.job_id) {
+        console.warn("⚠️ Already scraping this novel.");
         return;
     }
 
     scrapeCancelled = false;
-    enableCloudflareBypass = jobData.enable_cloudflare_bypass || false;
-    showBrowserWindow = false;  // Reset on new scrape
     isScraping = true;
     currentJobId = jobData.job_id;
 
+    enableCloudflareBypass = jobData.enable_cloudflare_bypass || false;
+    showBrowserWindow = false;
+
+    let startChapter = 1;
+    let actualUrl = jobData.start_url; // Default to what React sent
+
+    // 2. FETCH LATEST STATE FROM BACKEND
+    try {
+        const statusRes = await axios.get(`http://127.0.0.1:8000/api/status/${jobData.job_id}`);
+        const historyRes = await axios.get(`http://127.0.0.1:8000/api/history`);
+
+        // Update Chapter Count
+        const match = statusRes.data.progress.match(/\d+/);
+        startChapter = match ? parseInt(match[0]) + 1 : 1;
+
+        // 🔥 THE BOOKMARK FIX: 
+        // Get the latest saved 'start_url' from history (which is actually the NEXT chapter)
+        const savedJob = historyRes.data[jobData.job_id];
+        if (savedJob && savedJob.start_url) {
+            actualUrl = savedJob.start_url;
+            console.log(`📖 Bookmark found! Resuming from: ${actualUrl}`);
+        }
+    } catch (e) {
+        console.log("Using default jobData (Engine might still be starting or job is new)");
+    }
+
     event.sender.send('scrape-status', {
         status: 'STARTED',
-        message: `🚀 Starting... (Cloudflare: ${enableCloudflareBypass ? 'ON' : 'OFF'})`
+        message: `🚀 ${startChapter > 1 ? 'Resuming' : 'Starting'}... (Cloudflare: ${enableCloudflareBypass ? 'ON' : 'OFF'})`
     });
 
-    await scrapeChapter(event, jobData, jobData.start_url, 1);
+    // 3. Kick off the recursive loop with the CORRECT url and chapter number
+    await scrapeChapter(event, jobData, actualUrl, startChapter);
 });
 
+// ============ IPC: STOP ============
 ipcMain.on('stop-scrape', async (event, jobData) => {
-    scrapeCancelled = true;
-    currentJobId = jobData.job_id;
+    console.log("🛑 STOP SIGNAL RECEIVED");
 
+    // 1. Flip the switch (This kills the 'scrapeChapter' loop mid-flight)
+    scrapeCancelled = true;
+    isScraping = false;
+
+    // 2. Immediate UI Feedback
     event.sender.send('scrape-status', {
         status: 'STOPPING',
         message: '⏹️ Stopping scraper...'
     });
 
+    // 3. Tell the Python Backend to mark this job as "paused"
     try {
         await axios.post('http://127.0.0.1:8000/api/stop-scrape', {
             job_id: jobData.job_id,
@@ -352,15 +415,23 @@ ipcMain.on('stop-scrape', async (event, jobData) => {
 
         event.sender.send('scrape-status', {
             status: 'PAUSED',
-            message: '⏸️ Scraping paused - Click novel in library to resume'
+            message: '⏸️ Scraping paused - Bookmark saved.'
         });
 
-        isScraping = false;
-        scraperWindow?.hide();
+        // Hide browser if it was open
+        if (scraperWindow && !scraperWindow.isDestroyed()) {
+            scraperWindow.webContents.stop();
+            scraperWindow.hide();
+        }
     } catch (err) {
-        console.error("Failed to notify Python:", err);
+        console.error("❌ Failed to notify Python of stop:", err.message);
+        event.sender.send('scrape-status', {
+            status: 'PAUSED',
+            message: '⚠️ Paused (Backend sync failed, but scraper stopped)'
+        });
     }
 });
+
 
 ipcMain.on('toggle-scraper-view', (event, shouldShow) => {
     const win = createScraperWindow();
@@ -380,10 +451,43 @@ ipcMain.on('toggle-scraper-view', (event, shouldShow) => {
     }
 });
 
+ipcMain.on('resume-scrape', async (event, jobData) => {
+    try {
+        // 1. Ask Python for the latest state of this job
+        const response = await axios.get(`http://127.0.0.1:8000/api/status/${jobData.job_id}`);
+        const statusData = response.data;
+
+        // 2. Determine where to actually start
+        // If we have a 'start_url' saved in the job history, use that
+        const actualStartUrl = jobData.start_url;
+
+        console.log(`▶️ Resuming ${jobData.novel_name} from ${actualStartUrl}`);
+
+        // 3. Trigger the standard scraping logic
+        // Reset cancellation flags
+        scrapeCancelled = false;
+        isScraping = true;
+
+        // Pass the jobData to the existing scrape function
+        await scrapeChapter(event, jobData, actualStartUrl, statusData.chapters_count + 1);
+
+    } catch (err) {
+        event.sender.send('scrape-status', { status: 'ERROR', message: 'Failed to resume: ' + err.message });
+    }
+});
+
+ipcMain.on('open-output-folder', () => {
+    shell.openPath(path.join(outputDir, 'epubs'));
+});
+
 // ============ APP LIFECYCLE ============
 app.on('ready', () => {
     startPythonBackend();
     createWindow();
+
+    setTimeout(() => {
+        waitForEngine(mainWindow);
+    }, 1000);
 });
 
 app.on('will-quit', () => {
