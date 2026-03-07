@@ -53,9 +53,9 @@ The project uses **Electron’s built-in Chromium browser** to scrape pages like
 
 # 📑 Table of Contents
 
+- [Screenshots](#-screenshots)
 - [Overview](#-overview)
 - [Features](#-features)
-- [Screenshots](#-screenshots)
 - [Architecture](#-architecture)
 - [Project Structure](#-project-structure)
 - [Installation](#-installation)
@@ -66,6 +66,26 @@ The project uses **Electron’s built-in Chromium browser** to scrape pages like
 - [Troubleshooting](#-troubleshooting)
 - [Roadmap](#-roadmap)
 - [License](#-license)
+
+---
+
+# 📸 Screenshots
+
+![Library](./assets/Library.png)
+
+*Browse previously downloaded EPUBs with automatic cover extraction..*
+
+![Search Multiple Sites](./assets/Search.png)
+
+*it will allow you to search from multiple novel sites and you can choose to download from anywhere you want*
+
+![Download Manager Workspace](./assets/Download.png)
+
+*The Download Manager featuring live console output, progress tracking, and manual Cloudflare bypass.*
+
+![History](./assets/History.png)
+
+*The integrated Library and History views with dynamic cover extraction and EPUB management.*
 
 ---
 
@@ -117,25 +137,6 @@ The scraped content is processed by a **Python backend** that structures chapter
 
 ---
 
-# 📸 Screenshots
-
-![Library](./assets/Library.png)
-
-*Browse previously downloaded EPUBs with automatic cover extraction..*
-
-![Search Multiple Sites](./assets/Search.png)
-
-*it will allow you to search from multiple novel sites and you can choose to download from anywhere you want*
-
-![Download Manager Workspace](./assets/Download.png)
-
-*The Download Manager featuring live console output, progress tracking, and manual Cloudflare bypass.*
-
-![History](./assets/History.png)
-
-*The integrated Library and History views with dynamic cover extraction and EPUB management.*
-
----
 
 # 🏗 Architecture
 
