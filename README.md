@@ -1,26 +1,24 @@
-<div align="center">
-
 # 📖 Universal Novel Scraper (UNS)
 
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square)
-![Electron](https://img.shields.io/badge/Electron-Desktop%20Runtime-47848F?style=flat-square&logo=electron&logoColor=white)
-![React](https://img.shields.io/badge/React-Frontend-61DAFB?style=flat-square&logo=react&logoColor=black)
-![Python](https://img.shields.io/badge/Python-FastAPI%20Backend-3776AB?style=flat-square&logo=python&logoColor=white)
-![License](https://img.shields.io/badge/license-CC--BY--NC%204.0-orange?style=flat-square)
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/License-CC--BY--NC%204.0-orange?style=flat-square" alt="License" />
+</p>
 
-<br/>
-
-[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest)
-[![Download for macOS](https://img.shields.io/badge/Download_for_macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest)
-[![Download for Linux](https://img.shields.io/badge/Download_for_Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/OsamaTab/UNS/releases/latest)
-
-<br/>
-
-A high-performance desktop application designed to **scrape web novels chapter-by-chapter** and package them into professionally formatted **EPUB books**.
-
-</div>
+> A high-performance desktop application designed to **scrape web novels chapter-by-chapter** and package them into professionally formatted **EPUB books**.
 
 The project uses **Electron’s built-in Chromium browser** to scrape pages like a real user, bypassing most bot protections (including Cloudflare), while a **Python FastAPI sidecar** handles EPUB generation, state management, and file processing.
+
+---
+
+### 📥 Download Latest Release
+
+| Windows | macOS | Linux |
+| :---: | :---: | :---: |
+| [![Windows](https://img.shields.io/badge/Get%20for%20Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest) | [![macOS](https://img.shields.io/badge/Get%20for%20macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest) | [![Linux](https://img.shields.io/badge/Get%20for%20Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/OsamaTab/UNS/releases/latest) |
 
 ---
 
