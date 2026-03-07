@@ -82,7 +82,7 @@ The scraped content is processed by a **Python backend** that structures chapter
 
 ![Library](./assets/Library.png)
 
-*The integrated Library and History views with dynamic cover extraction and EPUB management.*
+*Browse previously downloaded EPUBs with automatic cover extraction..*
 
 ![Search Multiple Sites](./assets/Search.png)
 
@@ -95,14 +95,6 @@ The scraped content is processed by a **Python backend** that structures chapter
 ![History](./assets/History.png)
 
 *The integrated Library and History views with dynamic cover extraction and EPUB management.*
-
----
-
-### Library View
-
-![Library](./screenshots/library-view.png)
-
-Browse previously downloaded EPUBs with automatic cover extraction.
 
 ---
 
