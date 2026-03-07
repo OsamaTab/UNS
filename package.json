@@ -2,7 +2,7 @@
   "name": "novel-scraper-desktop",
   "productName": "UNS",
   "description": "Desktop app for scraping web novels into EPUB format",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": "Osama",
   "main": "main.js",
   "license": "CC-BY-NC-4.0",
@@ -24,6 +24,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "providers/**/*",
       "assets/icon.png",
       "frontend/dist/**/*"
     ],

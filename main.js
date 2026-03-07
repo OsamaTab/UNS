@@ -110,9 +110,7 @@ function createScraperWindow() {
         }
     });
 
-    // 🔥 FIX: Spoof a real Chrome User-Agent so Cloudflare actually renders the challenge
-    scraperWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
+    scraperWindow.webContents.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
     scraperWindow.on('close', (e) => {
         if (!app.isQuitting) {
             e.preventDefault();
@@ -440,6 +438,53 @@ ipcMain.handle('get-novel-details', async (event, novelUrl) => {
         return details;
     } catch (e) { return { description: "Error", allChapters: [] }; }
 });
+
+// ipcMain.handle('get-novel-details', async (event, { sourceId, novelUrl }) => {
+//     const provider = providers[sourceId];
+//     if (!provider) return { description: "Provider not found", allChapters: [] };
+
+//     if (!scraperWindow || scraperWindow.isDestroyed()) createScraperWindow();
+
+//     try {
+//         scraperWindow.show(); // Keep this enabled so you can visually debug!
+//         await scraperWindow.loadURL(novelUrl);
+
+//         let details = null;
+//         let attempts = 0;
+//         const maxAttempts = 20; // Try for up to 10 seconds (20 * 500ms)
+
+//         while (attempts < maxAttempts) {
+//             attempts++;
+//             await new Promise(r => setTimeout(r, 500));
+
+//             if (scraperWindow.webContents.isLoading()) continue;
+
+//             try {
+//                 // Execute the provider-specific script
+//                 details = await scraperWindow.webContents.executeJavaScript(
+//                     provider.getNovelDetailsScript()
+//                 );
+
+//                 // If we successfully found chapters, break the loop
+//                 if (details && details.allChapters && details.allChapters.length > 0) {
+//                     console.log(`[Scraper] Success! Loaded details for ${novelUrl}`);
+//                     return details; 
+//                 }
+//             } catch (err) {
+//                 if (!err.message.includes('Execution context was destroyed')) {
+//                     console.error("Execute JS Error:", err);
+//                 }
+//             }
+//         }
+
+//         console.log(`[Scraper] Timeout: No details found after 10 seconds for ${novelUrl}`);
+//         return { description: "Timeout or structure changed", allChapters: [] }; 
+
+//     } catch (err) {
+//         console.error(`Details error on ${sourceId}:`, err);
+//         return { description: "Error", allChapters: [] };
+//     }
+// });
 
 ipcMain.on('open-external', (event, url) => {
     require('electron').shell.openExternal(url);

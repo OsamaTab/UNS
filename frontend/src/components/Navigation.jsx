@@ -69,7 +69,7 @@ export default function Navigation({ isScraping }) {
                   key={tab.id}
                   to={`/${tab.id}`}
                   className={({ isActive }) => `
-                    relative flex items-center gap-3 px-5 py-2.5 rounded-xl transition-all duration-300 overflow-hidden
+                    relative flex items-center gap-3 px-3.5 py-2 rounded-xl transition-all duration-300 overflow-hidden
                     ${isActive 
                       ? 'text-white' 
                       : 'text-zinc-500 hover:text-zinc-300'}

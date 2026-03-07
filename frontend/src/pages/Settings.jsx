@@ -14,7 +14,7 @@ export default function Settings() {
         name: "novel-scraper-desktop",
         productName: "UNS",
         description: "Desktop app for scraping web novels into EPUB format",
-        version: "1.0.6", // Current Version
+        version: "1.0.7", // Current Version
         author: "Osama",
         license: "CC-BY-NC-4.0",
         appId: "com.universalnovelscraper.app",

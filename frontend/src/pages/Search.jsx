@@ -25,12 +25,10 @@ import { useNavigate } from 'react-router-dom';
 const ACTIVE_PROVIDERS = [
   { id: 'allnovel', name: 'AllNovel', desc: 'A massive library of popular web novels.', icon: '📚', color: 'from-emerald-500 to-teal-500' },
   { id: 'freewebnovel', name: 'FreeWebNovel', desc: 'Read trending novels for free.', icon: '🆓', color: 'from-blue-500 to-cyan-500' },
-  { id: 'graycity', name: 'Graycity', desc: 'A clean interface for popular titles.', icon: '🌆', color: 'from-slate-500 to-zinc-500' },
   { id: 'hiraethtranslation', name: 'HiraethTranslation', desc: 'High-quality fan translations.', icon: '✨', color: 'from-purple-500 to-pink-500' },
   { id: 'libread', name: 'LibRead', desc: 'Extensive collection of completed works.', icon: '📖', color: 'from-amber-500 to-orange-500' },
   { id: 'novelbin', name: 'NovelBin', desc: 'Browse top trending novels.', icon: '🗑️', color: 'from-red-500 to-rose-500' },
   { id: 'novelfull', name: 'NovelFull', desc: 'Fast updates and a wide variety of genres.', icon: '📱', color: 'from-indigo-500 to-blue-500' },
-  { id: 'novelsonline', name: 'NovelsOnline', desc: 'Reliable source for web and light novels.', icon: '🌐', color: 'from-teal-500 to-green-500' },
   { id: 'pawread', name: 'PawRead', desc: 'Exclusive translations and daily updates.', icon: '🐾', color: 'from-amber-500 to-yellow-500' },
   { id: 'readfromnet', name: 'ReadFrom.Net', desc: 'E-book style reading experience.', icon: '📱', color: 'from-violet-500 to-purple-500' },
   { id: 'royalroad', name: 'Royal Road', desc: 'The home of original web fiction and LitRPG.', icon: '👑', color: 'from-yellow-500 to-amber-500' },
@@ -46,6 +44,9 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [hoveredNovel, setHoveredNovel] = useState(null);
   
+  // New state to track which sources are expanded to show all results
+  const [expandedSources, setExpandedSources] = useState({});
+  
   const searchInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -53,6 +54,13 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
+
+  const toggleSource = (sourceId) => {
+    setExpandedSources(prev => ({
+      ...prev,
+      [sourceId]: !prev[sourceId]
+    }));
+  };
 
   // Handle search function - ONLY called on Enter
   const performSearch = useCallback(async () => {
@@ -65,6 +73,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
     console.log('Performing search for:', trimmedQuery);
     setHasSearched(true);
     setIsSearching(true);
+    setExpandedSources({}); // Reset expansions on new search
 
     // Initialize all providers as loading
     const initialStates = {};
@@ -119,6 +128,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
     if (val.trim() === '') {
       setHasSearched(false);
       setSourceStates({});
+      setExpandedSources({});
     }
   };
 
@@ -146,6 +156,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
     setSelectedProvider(provider);
     setQuery(provider.name);
     setHasSearched(true);
+    setExpandedSources({});
 
     setSourceStates({
       [provider.id]: { status: 'loading', data: [] }
@@ -178,6 +189,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
     setHasSearched(false);
     setSourceStates({});
     setSelectedProvider(null);
+    setExpandedSources({});
     searchInputRef.current?.focus();
   };
 
@@ -191,7 +203,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 animate-in fade-in duration-700">
+    <div className="max-w-7xl mx-auto px-6 animate-in fade-in duration-700 pb-20">
       {/* Header with Glass Effect */}
       <div className="relative mb-10">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-[2rem] blur-3xl -z-10" />
@@ -306,12 +318,13 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
             const provider = ACTIVE_PROVIDERS.find(p => p.id === sourceId);
             if (!provider) return null;
             
-            // Skip rendering if no data and not loading
-            if (state.status === 'not_found' && !isSearching) return null;
+            const isExpanded = expandedSources[sourceId];
+            const hasMore = state.data && state.data.length > 5;
+            const displayData = state.data ? (isExpanded ? state.data : state.data.slice(0, 5)) : [];
             
             return (
               <div key={sourceId} className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
-                {/* Source Header */}
+                {/* Source Header (Always visible) */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`w-1 h-8 bg-gradient-to-b ${provider.color} rounded-full`} />
@@ -339,7 +352,7 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
                 {/* Loading State */}
                 {state.status === 'loading' && (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {[1, 2, 3, 4, 5, 6].map(i => (
+                    {[1, 2, 3, 4, 5].map(i => (
                       <div key={i} className="space-y-3">
                         <div className="aspect-[2/3] bg-zinc-900/50 rounded-xl animate-pulse border border-zinc-800" />
                         <div className="h-4 bg-zinc-900/50 rounded w-3/4 animate-pulse" />
@@ -351,59 +364,87 @@ export default function Search({ query, setQuery, hasSearched, setHasSearched, s
 
                 {/* Success State with Results */}
                 {state.status === 'success' && state.data.length > 0 && (
-                  viewMode === 'grid' ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                      {state.data.map((novel, idx) => (
-                        <NovelCard
-                          key={idx}
-                          novel={novel}
-                          index={idx}
-                          provider={provider}
-                          onClick={() => handleViewDetails(novel)}
-                          onHover={setHoveredNovel}
-                          isHovered={hoveredNovel === novel.title}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {state.data.map((novel, idx) => (
-                        <NovelListItem
-                          key={idx}
-                          novel={novel}
-                          provider={provider}
-                          onClick={() => handleViewDetails(novel)}
-                        />
-                      ))}
-                    </div>
-                  )
+                  <div className="space-y-4">
+                    {viewMode === 'grid' ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                        {displayData.map((novel, idx) => (
+                          <NovelCard
+                            key={idx}
+                            novel={novel}
+                            index={idx}
+                            provider={provider}
+                            onClick={() => handleViewDetails(novel)}
+                            onHover={setHoveredNovel}
+                            isHovered={hoveredNovel === novel.title}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {displayData.map((novel, idx) => (
+                          <NovelListItem
+                            key={idx}
+                            novel={novel}
+                            provider={provider}
+                            onClick={() => handleViewDetails(novel)}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Expand/Collapse Button */}
+                    {hasMore && (
+                      <div className="flex justify-center mt-2">
+                        <button
+                          onClick={() => toggleSource(sourceId)}
+                          className="flex items-center gap-2 px-6 py-2.5 bg-zinc-900 hover:bg-zinc-800 rounded-full text-sm font-medium text-zinc-400 hover:text-white transition-all border border-zinc-800 hover:border-blue-500/30"
+                        >
+                          {isExpanded ? (
+                            <>
+                              Collapse Results
+                              <ChevronDown className="rotate-180 transition-transform" size={16} />
+                            </>
+                          ) : (
+                            <>
+                              Show {state.data.length - 5} More
+                              <ChevronDown className="transition-transform" size={16} />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Nothing Found State */}
+                {state.status === 'not_found' && (
+                  <div className="py-6 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-2xl flex items-center justify-center">
+                    <p className="text-sm text-zinc-600 flex items-center gap-2">
+                      <BookOpen size={16} />
+                      Nothing found
+                    </p>
+                  </div>
                 )}
 
                 {/* Error State */}
                 {state.status === 'error' && (
-                  <div className="py-12 bg-red-500/5 border border-red-500/20 rounded-2xl flex flex-col items-center justify-center">
-                    <AlertCircle size={32} className="text-red-500/50 mb-3" />
+                  <div className="py-6 bg-red-500/5 border border-red-500/20 rounded-2xl flex flex-col items-center justify-center">
+                    <AlertCircle size={24} className="text-red-500/50 mb-2" />
                     <p className="text-sm text-red-400">Source temporarily unavailable</p>
-                    <p className="text-xs text-zinc-600 mt-1">{provider.name} failed to respond</p>
                   </div>
                 )}
               </div>
             );
           })}
 
-          {/* No Results Message */}
+          {/* Global Clear Button if everything failed completely */}
           {Object.values(sourceStates).every(s => s.status === 'not_found' || s.status === 'error') && !isSearching && (
-            <div className="py-24 text-center">
-              <div className="w-24 h-24 bg-zinc-900/50 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-zinc-800">
-                <BookOpen size={48} className="text-zinc-700" />
-              </div>
-              <h3 className="text-2xl font-bold text-zinc-400 mb-2">No Results Found</h3>
-              <p className="text-zinc-600 max-w-md mx-auto">
-                We couldn't find any novels matching "{query}". Try a different search term or explore sources directly.
-              </p>
+            <div className="py-12 text-center border-t border-zinc-800 mt-8 pt-12">
+              <h3 className="text-xl font-bold text-zinc-400 mb-2">No Results Anywhere</h3>
+              <p className="text-zinc-600 mb-6">Try searching for a different title or keyword.</p>
               <button
                 onClick={clearSearch}
-                className="mt-8 px-6 py-3 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-sm font-medium text-zinc-400 hover:text-white transition-all border border-zinc-800"
+                className="px-6 py-3 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-sm font-medium text-zinc-400 hover:text-white transition-all border border-zinc-800"
               >
                 Clear Search
               </button>
@@ -447,7 +488,7 @@ function NovelCard({ novel, index, provider, onClick, onHover, isHovered }) {
   return (
     <div
       className="group cursor-pointer animate-in fade-in duration-500"
-      style={{ animationDelay: `${index * 50}ms` }}
+      style={{ animationDelay: `${(index % 5) * 50}ms` }}
       onClick={onClick}
       onMouseEnter={() => onHover(novel.title)}
       onMouseLeave={() => onHover(null)}
