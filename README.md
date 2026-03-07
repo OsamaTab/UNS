@@ -16,9 +16,38 @@ The project uses **Electron’s built-in Chromium browser** to scrape pages like
 
 ### 📥 Download Latest Release
 
-| Windows | macOS | Linux |
-| :---: | :---: | :---: |
-| [![Windows](https://img.shields.io/badge/Get%20for%20Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest) | [![macOS](https://img.shields.io/badge/Get%20for%20macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/OsamaTab/UNS/releases/latest) | [![Linux](https://img.shields.io/badge/Get%20for%20Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/OsamaTab/UNS/releases/latest) |
+<div align="center">
+
+<table>
+  <thead>
+    <tr>
+      <th align="center">Windows</th>
+      <th align="center">macOS</th>
+      <th align="center">Linux</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <a href="https://github.com/OsamaTab/UNS/releases/latest">
+          <img src="https://img.shields.io/badge/Get%20for%20Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://github.com/OsamaTab/UNS/releases/latest">
+          <img src="https://img.shields.io/badge/Get%20for%20macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS" />
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://github.com/OsamaTab/UNS/releases/latest">
+          <img src="https://img.shields.io/badge/Get%20for%20Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux" />
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
 
 ---
 
