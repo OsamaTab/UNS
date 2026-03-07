@@ -63,22 +63,14 @@ jobs:
       - name: Build Electron App
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # This single line replaces all the confusing if/else logic
         run: npx electron-builder build --publish always ${{ matrix.args }}
         
-      - name: Create Release Notes
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          name: Release ${{ github.ref_name }}
-          append_body: true # This prevents runners from overwriting each other's text
-          files: |
-            dist_electron/*.dmg
-            dist_electron/*.exe
-            dist_electron/*.AppImage
-            dist_electron/*.blockmap
-          body: |
-            ## 📖 Universal Novel Scraper ${{ github.ref_name }}
+      - name: Prepare Release Notes
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          cat <<EOF > release_notes.md
+          ## 📖 Universal Novel Scraper ${{ github.ref_name }}
             
             Download the version specific to your operating system below.
             
@@ -102,5 +94,20 @@ jobs:
             1. Download the `.AppImage`.
             2. Make it executable: `chmod +x UNS-*.AppImage`.
             3. Run the file.
+          EOF
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: ${{ matrix.os == 'macos-latest' && 'release_notes.md' || '' }}
+          append_body: false 
+          files: |
+            dist_electron/*.dmg
+            dist_electron/*.exe
+            dist_electron/*.AppImage
+            dist_electron/*.blockmap
+            dist_electron/latest*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

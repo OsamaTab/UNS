@@ -80,6 +80,10 @@ The scraped content is processed by a **Python backend** that structures chapter
 
 # 📸 Screenshots
 
+![Library](./assets/Library.png)
+
+*The integrated Library and History views with dynamic cover extraction and EPUB management.*
+
 ![Search Multiple Sites](./assets/Search.png)
 
 *it will allow you to search from multiple novel sites and you can choose to download from anywhere you want*
@@ -87,10 +91,6 @@ The scraped content is processed by a **Python backend** that structures chapter
 ![Download Manager Workspace](./assets/Download.png)
 
 *The Download Manager featuring live console output, progress tracking, and manual Cloudflare bypass.*
-
-![Library](./assets/Library.png)
-
-*The integrated Library and History views with dynamic cover extraction and EPUB management.*
 
 ![History](./assets/History.png)
 

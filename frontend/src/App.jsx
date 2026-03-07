@@ -5,6 +5,7 @@ import Download from './pages/Download';
 import Library from './pages/Library';
 import Search from './pages/Search';
 import History from './pages/History';
+import Settings from './pages/Settings';
 
 export default function App() {
   // Global Scraper State
@@ -82,6 +83,7 @@ export default function App() {
                 setIsScraping={setIsScraping}
               />
             } />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
       </div>

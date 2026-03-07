@@ -24,6 +24,7 @@ if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
 }
 
+
 function startPythonBackend() {
     const isPackaged = app.isPackaged;
     const enginePath = isPackaged
@@ -51,6 +52,22 @@ function startPythonBackend() {
 
     pythonProcess.stdout?.on('data', (data) => console.log(`🐍 Python: ${data}`));
     pythonProcess.stderr?.on('data', (data) => console.error(`🐍 Python Error: ${data}`));
+}
+
+async function waitForEngine(mainWindow, attempts = 10) {
+    for (let i = 0; i < attempts; i++) {
+        try {
+            await axios.get('http://127.0.0.1:8000/api/health');
+            console.log("✅ Engine is responsive!");
+            // Signal the frontend that the engine is ready
+            mainWindow.webContents.send('engine-ready');
+            return true;
+        } catch (e) {
+            console.log(`⏳ Waiting for engine... (Attempt ${i + 1}/${attempts})`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+    console.error("❌ Engine timed out.");
 }
 
 // ============ MAIN WINDOW ============
@@ -328,22 +345,6 @@ async function scrapeChapter(event, jobData, url, chapterNum) {
         });
         isScraping = false;
     }
-}
-
-async function waitForEngine(mainWindow, attempts = 10) {
-    for (let i = 0; i < attempts; i++) {
-        try {
-            await axios.get('http://127.0.0.1:8000/api/health');
-            console.log("✅ Engine is responsive!");
-            // Signal the frontend that the engine is ready
-            mainWindow.webContents.send('engine-ready');
-            return true;
-        } catch (e) {
-            console.log(`⏳ Waiting for engine... (Attempt ${i + 1}/${attempts})`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-    }
-    console.error("❌ Engine timed out.");
 }
 
 ipcMain.handle('add-epub-to-library', async (event) => {
