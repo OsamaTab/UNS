@@ -3,6 +3,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
+const providers = require('./providers');
 
 let mainWindow = null;
 let scraperWindow = null;
@@ -264,7 +265,7 @@ async function scrapeChapter(event, jobData, url, chapterNum) {
             job_id: jobData.job_id,
             novel_name: jobData.novel_name,
             chapter_title: pageData.title,
-            author: jobData.author,   
+            author: jobData.author,
             cover_data: jobData.cover_data,
             content: pageData.paragraphs,
             start_url: url,
@@ -359,7 +360,7 @@ ipcMain.handle('add-epub-to-library', async (event) => {
     for (const filePath of result.filePaths) {
         const fileName = path.basename(filePath);
         const destPath = path.join(outputDir, 'epubs', fileName);
-        
+
         // Only copy if it doesn't already exist
         if (!fs.existsSync(destPath)) {
             fs.copyFileSync(filePath, destPath);
@@ -367,6 +368,99 @@ ipcMain.handle('add-epub-to-library', async (event) => {
         }
     }
     return added;
+});
+
+ipcMain.handle('search-novel', async (event, { sourceId, query }) => {
+    const provider = providers[sourceId];
+    if (!provider) return [];
+
+    if (!scraperWindow || scraperWindow.isDestroyed()) createScraperWindow();
+
+    try {
+        // 1. Force stop any previous loading/navigation
+        scraperWindow.webContents.stop();
+
+        // 2. Small 200ms pause to let the network stack breathe
+        await new Promise(r => setTimeout(r, 200));
+
+        // 3. Navigate
+        await scraperWindow.loadURL(provider.getSearchUrl(query));
+
+        await scraperWindow.webContents.executeJavaScript(`
+            new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+        `);
+
+        // 5. Scrape
+        const results = await scraperWindow.webContents.executeJavaScript(
+            provider.getSearchScript(query)
+        );
+        return results;
+    } catch (err) {
+        console.error(`Search error on ${sourceId}:`, err);
+        return [];
+    }
+});
+
+ipcMain.handle('get-novel-details', async (event, novelUrl) => {
+    if (!scraperWindow || scraperWindow.isDestroyed()) createScraperWindow();
+    try {
+        scraperWindow.webContents.stop();
+        await scraperWindow.loadURL(novelUrl);
+        await new Promise(r => setTimeout(r, 2500));
+
+        const details = await scraperWindow.webContents.executeJavaScript(`
+            (() => {
+                // ... (previous desc and author selectors) ...
+
+                // Improved Chapter Scraper
+                const chapterLinks = document.querySelectorAll('ul.list-chapter a, #list-chapter a, .chapters a');
+                let allChapters = Array.from(chapterLinks).map(a => ({
+                    title: a.innerText.trim(),
+                    url: a.href
+                }));
+
+                // If we only found ~30, the site might be using a paginated list or a hidden "Load More"
+                // For now, we grab the last chapter text to show the TRUE total
+                const lastChEl = document.querySelector('.l-chapters, .last-chapter');
+                const lastChText = lastChEl ? lastChEl.innerText.trim() : (allChapters.length > 0 ? allChapters[allChapters.length-1].title : "N/A");
+
+                return {
+                    description: document.querySelector('.desc-text, .summary')?.innerText.trim() || "No description.",
+                    author: document.querySelector('.author')?.innerText.trim() || "Unknown",
+                    lastChapter: lastChText, 
+                    firstChapterUrl: document.querySelector('a.btn-read-now, a[href*="chapter-1"]')?.href || window.location.href,
+                    allChapters: allChapters // We show the first page for selection
+                };
+            })()
+        `);
+        return details;
+    } catch (e) { return { description: "Error", allChapters: [] }; }
+});
+
+ipcMain.on('open-external', (event, url) => {
+    require('electron').shell.openExternal(url);
+});
+
+ipcMain.handle('resolve-first-chapter', async (event, novelUrl) => {
+    if (!scraperWindow || scraperWindow.isDestroyed()) createScraperWindow();
+
+    try {
+        await scraperWindow.loadURL(novelUrl);
+        // Find the "Read Now" or "Chapter 1" link
+        const firstChapterUrl = await scraperWindow.webContents.executeJavaScript(`
+            (() => {
+                // Common selectors for "Read Now" buttons
+                const readBtn = document.querySelector('a.btn-read-now, a[href*="chapter-1"], .btn-info');
+                return readBtn ? readBtn.href : null;
+            })()
+        `);
+        return firstChapterUrl || novelUrl; // Fallback to novelUrl if not found
+    } catch (e) {
+        return novelUrl;
+    }
 });
 
 ipcMain.on('open-epub', (event, filename) => {

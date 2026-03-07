@@ -1,15 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Shield, ExternalLink, Terminal, Loader2, BookOpen, Image as ImageIcon } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
-export default function Download({
-  isScraping, setIsScraping, status, setStatus,
-  currentJobId, setCurrentJobId
+export default function Download({ 
+  isScraping, setIsScraping, status, setStatus, 
+  currentJobId, setCurrentJobId 
 }) {
-  const [url, setUrl] = useState('');
-  const [name, setName] = useState('');
+  const location = useLocation();
+  const prefill = location.state?.prefill || null;
+
+  const [url, setUrl] = useState(prefill ? prefill.url : '');
+  const [name, setName] = useState(prefill ? prefill.title : '');
   const [author, setAuthor] = useState('');
-  const [coverData, setCoverData] = useState('');
-  const [coverFileName, setCoverFileName] = useState('');
+  
+  // To handle the cover image URL from search, we can just set it as coverData
+  const [coverData, setCoverData] = useState(prefill && prefill.cover ? prefill.cover : '');
+  const [coverFileName, setCoverFileName] = useState(prefill && prefill.cover ? 'Auto-fetched from search' : '');
   const [enableCloudflareBypass, setEnableCloudflareBypass] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
   const [logs, setLogs] = useState([]);

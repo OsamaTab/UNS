@@ -13,6 +13,9 @@ export default function App() {
   const [progress, setProgress] = useState('0 chapters');
   const [currentJobId, setCurrentJobId] = useState(null);
   const [library, setLibrary] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchHasSearched, setSearchHasSearched] = useState(false);
+  const [searchSourceStates, setSearchSourceStates] = useState({});
 
   const API_BASE = "http://127.0.0.1:8000/api";
 
@@ -64,7 +67,13 @@ export default function App() {
               />
             } />
             <Route path="/library" element={<Library />} />
-            <Route path="/search" element={<Search />} />
+            <Route path="/search" element={
+              <Search
+                query={searchQuery} setQuery={setSearchQuery}
+                hasSearched={searchHasSearched} setHasSearched={setSearchHasSearched}
+                sourceStates={searchSourceStates} setSourceStates={setSearchSourceStates}
+              />
+            } />
             <Route path="/history" element={
               <History
                 library={library}

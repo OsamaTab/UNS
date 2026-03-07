@@ -80,6 +80,10 @@ The scraped content is processed by a **Python backend** that structures chapter
 
 # 📸 Screenshots
 
+![Search Multiple Sites](./assets/Search.png)
+
+*it will allow you to search from multiple novel sites and you can choose to download from anywhere you want*
+
 ![Download Manager Workspace](./assets/Download.png)
 
 *The Download Manager featuring live console output, progress tracking, and manual Cloudflare bypass.*

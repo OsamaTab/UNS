@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onEngineReady: (callback) => ipcRenderer.on('engine-ready', callback),
     addEpubToLibrary: () => ipcRenderer.invoke('add-epub-to-library'),
     openEpub: (filename) => ipcRenderer.send('open-epub', filename),
+    searchNovel: (data) => ipcRenderer.invoke('search-novel', data),
+    resolveFirstChapter: (data) => ipcRenderer.invoke('resolve-first-chapter', data),
+    getNovelDetails: (url) => ipcRenderer.invoke('get-novel-details', url),
+    openExternal: (url) => ipcRenderer.send('open-external', url),
     
     // Progress listeners
     onScrapeStatus: (callback) => {
@@ -20,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onHumanActionNeeded: (callback) => {
         ipcRenderer.on('human-action-needed', (event, data) => callback(data));
     },
-    
+
     // Remove listeners on cleanup
     removeStatusListener: () => ipcRenderer.removeAllListeners('scrape-status'),
     removeErrorListener: () => ipcRenderer.removeAllListeners('python-error'),
