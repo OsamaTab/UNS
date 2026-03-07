@@ -68,9 +68,15 @@ jobs:
         
       - name: Create Release Notes
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest'
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           name: Release ${{ github.ref_name }}
+          append_body: true # This prevents runners from overwriting each other's text
+          files: |
+            dist_electron/*.dmg
+            dist_electron/*.exe
+            dist_electron/*.AppImage
+            dist_electron/*.blockmap
           body: |
             ## 📖 Universal Novel Scraper ${{ github.ref_name }}
             
